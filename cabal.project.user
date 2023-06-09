@@ -1,9 +1,4 @@
-packages: streamly-metrics.cabal
-
-source-repository-package
-   type: git
-   location: https://github.com/composewell/streamly.git
-   tag: master
+packages: haskell-perf.cabal
 
 source-repository-package
   type: git

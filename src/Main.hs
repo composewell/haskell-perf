@@ -1,6 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE DoAndIfThenElse #-}
-{-# LANGUAGE TupleSections #-}
 module Main (main) where
 
 import Aggregator
@@ -304,7 +301,7 @@ printAllCounters concurrent statsRaw tidMap ctrs w = do
 
             windowCounts = fmap toCounts $ filter selectWindow statsRaw
             oneCounterCounts = filter (selectCounter (head ctrs1)) windowCounts
-            counts = fmap fromIntegral $ fmap snd $ oneCounterCounts
+            counts = fmap snd $ oneCounterCounts
 
             allRows =
                   fmap (\(x:xs) ->

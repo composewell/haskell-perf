@@ -1,0 +1,119 @@
+cabal-version:      2.2
+name:               haskell-perf
+version:            0.1.0
+synopsis:           Haskell performance analysis Tool
+description:
+  Analyze the CPU cost, heap allocations, Linux perf event counters for
+  Haskell threads and for user defined code windows in a Haskell thread
+  aware manner.
+
+homepage:            https://streamly.composewell.com
+bug-reports:         https://github.com/composewell/haskell-perf/issues
+license:             Apache-2.0
+license-file:        LICENSE
+tested-with:         GHC==9.0.1
+                   , GHC==9.2.7
+author:              Composewell Technologies
+maintainer:          streamly@composewell.com
+copyright:           2021 Composewell Technologies
+category:            Streamly
+stability:           Experimental
+build-type:          Simple
+
+extra-doc-files:
+    Changelog.md
+    README.md
+    dev/*.md
+
+source-repository head
+    type: git
+    location: https://github.com/composewell/haskell-perf
+
+flag dev
+  description: Development build
+  manual: True
+  default: False
+
+flag fusion-plugin
+  description: Use fusion plugin for benchmarks and executables
+  manual: True
+  default: False
+
+-------------------------------------------------------------------------------
+-- Common stanzas
+-------------------------------------------------------------------------------
+
+common default-extensions
+    default-extensions:
+        BangPatterns
+        CApiFFI
+        ConstraintKinds
+        DeriveDataTypeable
+        DeriveGeneric
+        DeriveTraversable
+        DoAndIfThenElse
+        ExistentialQuantification
+        FlexibleContexts
+        FlexibleInstances
+        GeneralizedNewtypeDeriving
+        InstanceSigs
+        KindSignatures
+        LambdaCase
+        MagicHash
+        MultiParamTypeClasses
+        PatternSynonyms
+        RankNTypes
+        RecordWildCards
+        ScopedTypeVariables
+        TupleSections
+        TypeApplications
+        TypeFamilies
+        ViewPatterns
+
+        -- MonoLocalBinds, enabled by TypeFamilies, causes performance
+        -- regressions. Disable it. This must come after TypeFamilies,
+        -- otherwise TypeFamilies will enable it again.
+        NoMonoLocalBinds
+
+        -- UndecidableInstances -- Does not show any perf impact
+        -- UnboxedTuples        -- interferes with (#.)
+
+common compile-options
+    import default-extensions
+    default-language: Haskell2010
+
+    ghc-options:    -Weverything
+                    -Wno-implicit-prelude
+                    -Wno-missing-deriving-strategies
+                    -Wno-missing-exported-signatures
+                    -Wno-missing-import-lists
+                    -Wno-missing-local-signatures
+                    -Wno-missing-safe-haskell-mode
+                    -Wno-missed-specialisations
+                    -Wno-all-missed-specialisations
+                    -Wno-monomorphism-restriction
+                    -Wno-prepositive-qualified-module
+                    -Wno-unsafe
+                    -Rghc-timing
+                    -Wno-missing-kind-signatures
+                    -Wno-redundant-bang-patterns
+                    -Wno-operator-whitespace
+                    -Wno-incomplete-uni-patterns
+
+    if flag(dev)
+      ghc-options:  -Wmissed-specialisations
+                    -Wall-missed-specialisations
+                    -fno-ignore-asserts
+
+executable hperf
+  import: compile-options
+  hs-source-dirs: src
+  main-is: Main.hs
+  other-modules: Aggregator, EventParser
+  ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
+  build-depends:
+       base >= 4.9 && < 5
+     , containers
+     , streamly-core == 0.1.0
+     , format-numbers
+     , text
