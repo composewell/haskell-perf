@@ -219,7 +219,6 @@ data Counter =
       ThreadCPUTime
     | ThreadCtxVoluntary
     | ThreadPageFaultMinor
-    | ThreadAllocated
     | L1iCacheHit
     | L1iCacheMiss
     | L1dCacheHit
@@ -228,6 +227,11 @@ data Counter =
     | BranchMisses
     | Instructions
     | LastLevelCacheMisses
+
+    -- Keep after this line, the counters that are used only for Haskell code
+    -- windows and not for "foreign" windows. We check < ThreadAllocated in
+    -- the code.
+    | ThreadAllocated
     | ProcessCPUTime
     | ForeignCPUTime
     | GCCPUTime

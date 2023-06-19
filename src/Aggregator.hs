@@ -121,7 +121,7 @@ translateThreadEvents = Fold step initial extract
             case Map.lookup tag wmap of
                 Just _ ->
                     error $ "Duplicate window add: " ++ "window = " ++ tag
-                            ++ " tid = " ++ show tid
+                            ++ " tid = " ++ show tid ++ " ctr = " ++ show ctr
                 Nothing -> Just $ Map.insert tag window wmap
 
         f x = CounterEvent tid x ctr Resume value
@@ -164,15 +164,16 @@ translateThreadEvents = Fold step initial extract
     -- including the "default" window to include them in the entire thread
     -- timings. Only thread level counters (ThreadCPUTime) are to be broadcast
     -- the rest fall through to the regular window handling below.
-    step (Tuple' mp _) (CounterEvent tid tag ThreadCPUTime Resume value)
-        | ":foreign" `List.isSuffixOf` tag = do
-        windowStartForeign mp tid tag value ThreadCPUTime
-    step (Tuple' mp _) (CounterEvent tid tag ThreadCPUTime Suspend value)
-        | ":foreign" `List.isSuffixOf` tag = do
-        windowEndForeign mp tid tag value ThreadCPUTime
-    step _ (CounterEvent _ tag _ Exit _)
+    step (Tuple' mp _) (CounterEvent tid tag ctr Resume value)
+        | ":foreign" `List.isSuffixOf` tag && ctr < ThreadAllocated = do
+        windowStartForeign mp tid tag value ctr
+    step (Tuple' mp _) (CounterEvent tid tag ctr Suspend value)
+        | ":foreign" `List.isSuffixOf` tag && ctr < ThreadAllocated = do
+        windowEndForeign mp tid tag value ctr
+    step _ (CounterEvent tid tag ctr ev _)
         | ":foreign" `List.isSuffixOf` tag =
-        error "Unexpected Exit event"
+        error $ "Unexpected event: tid = " ++ show tid ++ " ctr = "
+            ++ show ctr ++ " loc = " ++ show ev
 
     -- User defined window events
     step (Tuple' mp _) (CounterEvent tid tag counter Resume value) =
