@@ -2,7 +2,7 @@
 
 GHC Patch: https://github.com/composewell/ghc/tree/ghc-8.10.7-eventlog-enhancements
 
-## Enable perf counters
+## Enable Linux perf counters
 
 Enable unrestricted use of perf counters:
 
@@ -67,6 +67,55 @@ withTracingFlow tag action = do
 
 We can wrap parts of the flow we want to analyze with `withTracingFlow` using a
 tag to help us identify it.
+
+## End of Window
+
+You can put the END of the window in different paths but ensure that all paths
+are covered:
+
+```
+  r <- f x
+  case r of
+    Just val -> do
+      -- _ <- L.runIO $ traceEventIO $ "END:" ++ "window"
+      -- Some processing
+    Nothing -> do
+      -- _ <- L.runIO $ traceEventIO $ "END:" ++ "window"
+      -- Some processing
+```
+
+## Measurement Overhead
+
+Even when you are measuring an empty block of code there will be some minimum
+timing and allocations reported because of the measurement overhead.
+
+```
+    _ <- traceEventIO $ "START:emptyWindow"
+    _ <- traceEventIO $ "END:emptyWindow"
+```
+
+The timing is due to the time measurement system call itself. The allocations
+are due to the traceEventIO haskell code execution. TODO: fix the allocations.
+
+## Measurement with Lazy Evaluation
+
+If we want to measure the cost of the lookup in the code below we need
+to evaluate it right there:
+
+```
+    m <- readIORef _configCache
+    return . snd $ SimpleLRU.lookup k m
+```
+
+For correct measurement use the following code:
+
+```
+    m <- readIORef _configCache
+    _ <- traceEventIO $ "START:" ++ "mapLookup"
+    let !v = HM.lookup k m
+    _ <- traceEventIO $ "END:" ++ "mapLookup"
+    return v
+```
 
 ## Labelling Threads
 
