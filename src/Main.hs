@@ -37,7 +37,7 @@ import qualified Streamly.Data.Stream as Stream
 import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.Data.Unfold as Unfold
 import qualified Streamly.FileSystem.File as File
-import qualified Streamly.Internal.Data.Fold.Container as Fold
+import qualified Streamly.Internal.Data.Fold as Fold
     (demuxKvToMap, kvToMap)
 
 -------------------------------------------------------------------------------
