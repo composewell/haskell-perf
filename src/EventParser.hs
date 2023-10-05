@@ -179,35 +179,35 @@ parseDataHeader stream = do
 #define EVENT_USER_MSG            19 /* (message ...)          */
 #define EVENT_THREAD_LABEL        44 /* (thread, name_string)  */
 
-#define EVENT_PRE_THREAD_CLOCK           200
-#define EVENT_POST_THREAD_CLOCK          201
-#define EVENT_PRE_THREAD_PAGE_FAULTS     202
-#define EVENT_POST_THREAD_PAGE_FAULTS    203
-#define EVENT_PRE_THREAD_CTX_SWITCHES    204
-#define EVENT_POST_THREAD_CTX_SWITCHES   205
-#define EVENT_PRE_THREAD_ALLOCATED       206
-#define EVENT_POST_THREAD_ALLOCATED      207
-#define EVENT_PRE_HW_CACHE_L1I           208
-#define EVENT_POST_HW_CACHE_L1I          209
-#define EVENT_PRE_HW_CACHE_L1I_MISS      210
-#define EVENT_POST_HW_CACHE_L1I_MISS     211
-#define EVENT_PRE_HW_CACHE_L1D           212
-#define EVENT_POST_HW_CACHE_L1D          213
-#define EVENT_PRE_HW_CACHE_L1D_MISS      214
-#define EVENT_POST_HW_CACHE_L1D_MISS     215
-#define EVENT_PRE_HW_CACHE_MISSES        216
-#define EVENT_POST_HW_CACHE_MISSES       217
-#define EVENT_PRE_HW_INSTRUCTIONS        218
-#define EVENT_POST_HW_INSTRUCTIONS       219
-#define EVENT_PRE_HW_BRANCH_MISSES       220
-#define EVENT_POST_HW_BRANCH_MISSES      221
-#define EVENT_PRE_THREAD_CPU_MIGRATIONS  222
-#define EVENT_POST_THREAD_CPU_MIGRATIONS 223
-#define EVENT_PRE_PROCESS_CPU_TIME       224
-#define EVENT_PRE_FOREIGN_CPU_TIME       225
-#define EVENT_PRE_GC_CPU_TIME            226
-#define EVENT_PRE_USER_CPU_TIME          227
-#define EVENT_PRE_SYSTEM_CPU_TIME        228
+#define EVENT_PRE_THREAD_CLOCK           300
+#define EVENT_POST_THREAD_CLOCK          301
+#define EVENT_PRE_THREAD_PAGE_FAULTS     302
+#define EVENT_POST_THREAD_PAGE_FAULTS    303
+#define EVENT_PRE_THREAD_CTX_SWITCHES    304
+#define EVENT_POST_THREAD_CTX_SWITCHES   305
+#define EVENT_PRE_THREAD_ALLOCATED       306
+#define EVENT_POST_THREAD_ALLOCATED      307
+#define EVENT_PRE_HW_CACHE_L1I           308
+#define EVENT_POST_HW_CACHE_L1I          309
+#define EVENT_PRE_HW_CACHE_L1I_MISS      310
+#define EVENT_POST_HW_CACHE_L1I_MISS     311
+#define EVENT_PRE_HW_CACHE_L1D           312
+#define EVENT_POST_HW_CACHE_L1D          313
+#define EVENT_PRE_HW_CACHE_L1D_MISS      314
+#define EVENT_POST_HW_CACHE_L1D_MISS     315
+#define EVENT_PRE_HW_CACHE_MISSES        316
+#define EVENT_POST_HW_CACHE_MISSES       317
+#define EVENT_PRE_HW_INSTRUCTIONS        318
+#define EVENT_POST_HW_INSTRUCTIONS       319
+#define EVENT_PRE_HW_BRANCH_MISSES       320
+#define EVENT_POST_HW_BRANCH_MISSES      321
+#define EVENT_PRE_THREAD_CPU_MIGRATIONS  322
+#define EVENT_POST_THREAD_CPU_MIGRATIONS 323
+#define EVENT_PRE_PROCESS_CPU_TIME       324
+#define EVENT_PRE_FOREIGN_CPU_TIME       325
+#define EVENT_PRE_GC_CPU_TIME            326
+#define EVENT_PRE_USER_CPU_TIME          327
+#define EVENT_PRE_SYSTEM_CPU_TIME        328
 
 -- XXX We attach a user event to a thread by looking at the previous thread
 -- start event. But when there are multiple capabilities this may not be
