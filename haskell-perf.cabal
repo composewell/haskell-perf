@@ -114,6 +114,6 @@ executable hperf
   build-depends:
        base >= 4.9 && < 5
      , containers
-     , streamly-core == 0.1.0
+     , streamly-core == 0.2.0
      , format-numbers
      , text

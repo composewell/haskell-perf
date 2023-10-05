@@ -70,20 +70,20 @@ eventTypeEnd = w8 "ete\0"
 --  *       Word8*         -- extra info (for future extensions)
 --  *       EVENT_ET_END
 -- (event Id, event size)
-eventType :: ParserK Word8 IO (Int, Int)
+eventType :: ParserK (Array Word8) IO (Int, Int)
 eventType = do
-    _ <- ParserK.fromParser (Parser.listEq eventTypeBegin)
-    eventId <- ParserK.fromParser word16be
+    _ <- ParserK.adaptC (Parser.listEq eventTypeBegin)
+    eventId <- ParserK.adaptC word16be
     -- ParserK.fromEffect $ print $ "Event id =" ++ show eventId
-    eventSize <- ParserK.fromParser int16be
+    eventSize <- ParserK.adaptC int16be
     -- ParserK.fromEffect $ print $ "Event size =" ++ show eventSize
-    descLen <- ParserK.fromParser word32be
-    _desc <- ParserK.fromParser (Parser.takeEQ (fromIntegral descLen) Fold.toList)
+    descLen <- ParserK.adaptC word32be
+    _desc <- ParserK.adaptC (Parser.takeEQ (fromIntegral descLen) Fold.toList)
     -- ParserK.fromEffect $ putStrLn (map (chr . fromIntegral) desc)
-    infoLen <- ParserK.fromParser word32be
+    infoLen <- ParserK.adaptC word32be
     -- ParserK.fromEffect $ print $ "info len =" ++ show infoLen
-    ParserK.fromParser (Parser.takeEQ (fromIntegral infoLen) Fold.drain)
-    _ <- ParserK.fromParser (Parser.listEq eventTypeEnd)
+    ParserK.adaptC (Parser.takeEQ (fromIntegral infoLen) Fold.drain)
+    _ <- ParserK.adaptC (Parser.listEq eventTypeEnd)
     return (fromIntegral eventId, fromIntegral eventSize)
 
 ---------------------
@@ -117,16 +117,16 @@ parseEventTypes kv stream = do
             let kv1 = Map.insert eventId  eventSize kv
             parseEventTypes kv1 rest
 
-headerPre :: ParserK Word8 IO ()
+headerPre :: ParserK (Array Word8) IO ()
 headerPre = do
-    _ <- ParserK.fromParser (Parser.listEq headerBegin)
-    _ <- ParserK.fromParser (Parser.listEq hetBegin)
+    _ <- ParserK.adaptC (Parser.listEq headerBegin)
+    _ <- ParserK.adaptC (Parser.listEq hetBegin)
     return ()
 
-headerPost :: ParserK Word8 IO ()
+headerPost :: ParserK (Array Word8) IO ()
 headerPost = do
-    _ <- ParserK.fromParser (Parser.listEq hetEnd)
-    _ <- ParserK.fromParser (Parser.listEq headerEnd)
+    _ <- ParserK.adaptC (Parser.listEq hetEnd)
+    _ <- ParserK.adaptC (Parser.listEq headerEnd)
     return ()
 
 {-
@@ -168,7 +168,7 @@ dataBegin = w8 "datb"
 
 parseDataHeader :: StreamK IO (Array Word8) -> IO (StreamK IO (Array Word8))
 parseDataHeader stream = do
-    let p = ParserK.fromParser (Parser.listEq dataBegin)
+    let p = ParserK.adaptC (Parser.listEq dataBegin)
     (res, rest) <- StreamK.parseBreakChunks p stream
     case res of
         Left err -> fail $ show err
