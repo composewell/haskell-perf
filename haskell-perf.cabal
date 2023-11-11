@@ -117,3 +117,14 @@ executable hperf
      , streamly-core == 0.2.0
      , format-numbers
      , text
+
+executable stat-collector
+  import: compile-options
+  hs-source-dirs: stat-collector-src
+  main-is: Main.hs
+  ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
+  build-depends:
+       base
+     , streamly-core
+     , containers
+     , ansi-terminal
