@@ -2,3 +2,5 @@
 .github/workflows/haskell.yml
 cabal.project.user
 .gitignore
+flake.nix
+flake.lock
