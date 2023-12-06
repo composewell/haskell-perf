@@ -19,7 +19,8 @@ import Streamly.Data.Parser (Parser)
 import Streamly.Data.ParserK (ParserK)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
-import Streamly.Internal.Serialize.FromBytes (int16be, word16be, word32be, word64be)
+import Streamly.Internal.Data.Binary.Parser
+    (int16be, word16be, word32be, word64be)
 
 import qualified Data.IntMap as Map
 import qualified Streamly.Data.Array as Array

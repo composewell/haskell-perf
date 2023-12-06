@@ -52,7 +52,7 @@ newtype Window = Window (Set Word32) -- thread ids that have joined the window
 
 {-# INLINE translateThreadEvents #-}
 translateThreadEvents :: Fold IO Event [Event]
-translateThreadEvents = Fold step initial extract
+translateThreadEvents = Fold step initial extract extract
 
     where
 
@@ -204,7 +204,7 @@ data CollectState =
 collectThreadCounter ::
     Fold IO ((Word32, String, Counter), (Location, Int64))
     (Maybe (Either (Maybe Int64) Int64))
-collectThreadCounter = Fold step initial extract
+collectThreadCounter = Fold step initial extract extract
 
     where
 
