@@ -66,7 +66,7 @@ type StatResult = (Double, (Maybe (Double, Double)))
 
 {-# INLINE range #-}
 range :: (MonadIO m, Storable a, Ord a, Show a) => Int -> Fold m a (Maybe (a, a))
-range n = Fold step initial extract
+range n = Fold step initial extract extract
 
     where
 

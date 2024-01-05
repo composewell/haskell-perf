@@ -4,6 +4,7 @@ module EventParser
       parseLogHeader
     , parseDataHeader
     , parseEvents
+    , parsePrimOpEvents
     , Counter (..)
     , Location (..)
     , Event (..)
@@ -12,6 +13,8 @@ where
 
 -- import Debug.Trace
 import Data.Char (ord, chr)
+import Data.Function ((&))
+import Data.Functor.Identity (Identity(..))
 import Data.IntMap (IntMap)
 import Data.Word (Word8, Word16, Word32, Word64)
 import Streamly.Data.Array (Array)
@@ -19,7 +22,7 @@ import Streamly.Data.Parser (Parser)
 import Streamly.Data.ParserK (ParserK)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
-import Streamly.Internal.Serialize.FromBytes (int16be, word16be, word32be, word64be)
+import Streamly.Internal.Data.Binary.Parser (int16be, word16be, word32be, word64be)
 
 import qualified Data.IntMap as Map
 import qualified Streamly.Data.Array as Array
@@ -29,6 +32,7 @@ import qualified Streamly.Data.Stream as Stream
 import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.Data.Parser as Parser
 import qualified Streamly.Data.ParserK as ParserK
+import qualified Streamly.Unicode.Stream as Unicode
 
 {-
 #define EVENT_HEADER_BEGIN    0x68647262
@@ -238,10 +242,10 @@ data Counter =
     | ProcessUserCPUTime
     | ProcessSystemCPUTime
 
-    deriving (Show, Eq, Ord)
+    deriving (Show, Read, Eq, Ord)
 
 -- data Location = Enter | Exit | Resume | Suspend deriving Show
-data Location = Resume | Suspend | Exit | Purge deriving Show
+data Location = Resume | Suspend | Exit | Purge deriving (Show, Read)
 
 -- Event tid window counter start/stop value
 data Event =
@@ -375,3 +379,23 @@ parseEvents kv =
     . Stream.parseMany (event kv)
     . Stream.unfoldMany Array.reader
     . StreamK.toStream
+
+parsePrimOpLineToEvent :: String -> Event
+parsePrimOpLineToEvent line = runIdentity $ do
+    res <-
+        Stream.fromList line
+            & Stream.foldMany (Fold.takeEndBy_ (== '/') Fold.toList)
+            & Stream.toList
+    case res of
+        ["STAT", location, tid, counter, tag, val] ->
+            pure $ CounterEvent
+                (read tid) tag (read counter) (read location) (read val)
+        _ -> error $ "Incorrect number of chunks"
+
+parsePrimOpEvents :: Stream IO (Array Word8) -> Stream IO Event
+parsePrimOpEvents inp =
+    Unicode.decodeUtf8Chunks inp
+        & Stream.foldMany
+              (Fold.takeEndBy_
+                   (== '\n')
+                   (parsePrimOpLineToEvent <$> Fold.toList))

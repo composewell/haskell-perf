@@ -19,6 +19,7 @@ import EventParser
     Event (..),
     parseDataHeader,
     parseEvents,
+    parsePrimOpEvents,
     parseLogHeader,
   )
 import Streamly.Data.Array (Array)
@@ -26,12 +27,14 @@ import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
 import Streamly.Internal.Data.Fold (Fold (..))
 import System.Environment (getArgs)
+import System.IO (stdin)
 import Text.Printf (printf)
 
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Streamly.Data.Fold as Fold
+import qualified Streamly.FileSystem.Handle as Handle
 -- import qualified Streamly.Internal.Data.Fold as Fold (trace)
 import qualified Streamly.Data.Stream as Stream
 import qualified Streamly.Data.StreamK as StreamK
@@ -159,6 +162,13 @@ generateEvents kv =
         . Stream.postscan translateThreadEvents
         -- . Stream.trace print
         . parseEvents kv
+
+{-# INLINE generatePrimOpEvents #-}
+generatePrimOpEvents :: Stream IO (Array Word8) -> Stream IO Event
+generatePrimOpEvents =
+          Stream.unfoldMany Unfold.fromList
+        . Stream.postscan translateThreadEvents
+        . parsePrimOpEvents
 
 -- Ways to present:
 -- For each thread rows of counters - cols of counter stats
@@ -416,10 +426,26 @@ flattenStats statsRaw = do
 -- if a thread logged events to a particular capability buffer and then got
 -- scheduled on another capability before its eventlog could be flushed from
 -- the previous capability?
-main :: IO ()
-main = do
-    let flattenWindows = False
-    (path:[]) <- getArgs
+
+counterToEither
+    :: Event
+    -> Either ((Word32, String, Counter), (Location, Int64)) (Word32, String)
+counterToEither (CounterEvent tid tag ctr loc val) =
+    Left ((tid, tag, ctr), (loc, fromIntegral val))
+counterToEither (LabelEvent tid label) = Right (tid, label)
+
+
+mainPrimOp :: IO ()
+mainPrimOp = do
+    let inputStream = Stream.unfold Handle.chunkReader stdin
+    (statsMap, tidMap) <-
+        Stream.fold
+            (Fold.partition toStats (Fold.kvToMap Fold.the))
+            (fmap counterToEither $ generatePrimOpEvents inputStream)
+    displayStats (statsMap, tidMap)
+
+mainEventLog :: String -> IO ()
+mainEventLog path = do
     let stream = File.readChunks path
     (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
     -- putStrLn $ show kv
@@ -427,7 +453,14 @@ main = do
     (statsMap, tidMap) <-
         Stream.fold
             (Fold.partition toStats (Fold.kvToMap Fold.the))
-            (fmap toEither $ generateEvents kv events)
+            (fmap counterToEither $ generateEvents kv events)
+    displayStats (statsMap, tidMap)
+
+displayStats ::
+    ( Map (Word32, String, Counter) (Maybe [(String, Int)])
+    , Map Word32 (Maybe String)
+    ) -> IO ()
+displayStats (statsMap, tidMap) = do
     -- statsMap :: Map (tid, window tag, counter) (Maybe [(stat name, value)])
     -- putStrLn $ ppShow r
     -- putStrLn $ show tidMap
@@ -485,10 +518,13 @@ main = do
 
     where
 
-    toEither (CounterEvent tid tag ctr loc val) =
-        Left ((tid, tag, ctr), (loc, fromIntegral val))
-    toEither (LabelEvent tid label) = Right (tid, label)
+    flattenWindows = False
 
     checkLabel (tid,Nothing) =
         error $ "Duplicate non-matching label events for thread: " ++ show tid
     checkLabel _ = pure ()
+
+main :: IO ()
+main = do
+    (mode:rest) <- getArgs
+    if mode == "P" then mainPrimOp else mainEventLog (head rest)
