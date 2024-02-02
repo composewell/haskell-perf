@@ -1,4 +1,5 @@
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main (main) where
 
@@ -9,36 +10,27 @@ module Main (main) where
 -- import Control.Concurrent (threadDelay)
 import Data.Int (Int32, Int64)
 import System.Environment (getArgs)
-import Control.Monad.IO.Class (MonadIO(..))
 import Data.Function ((&))
-import Data.List (foldl', findIndex, sortBy, find)
+import Data.List (foldl', uncons)
+import Data.Char (ord)
 import Data.Map (Map)
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromJust)
 import Data.Word (Word8)
-import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.Storable (Storable, peek)
-import Numeric (showFFloat)
 import Streamly.Data.Array (Array)
 import Streamly.Data.Fold (Fold)
 import Streamly.Data.Stream (Stream)
 import Streamly.Internal.Data.Fold (Fold(..), Step(..))
-import Streamly.Internal.Data.Ring (slidingWindow)
-import Streamly.Internal.Data.Tuple.Strict (Tuple3Fused' (Tuple3Fused'))
 import Streamly.Unicode.String (str)
-import System.IO (hFlush, stdout, stdin)
-import Text.Read (readMaybe)
-import System.Posix.Signals (installHandler, Handler(Catch), sigINT, sigTERM)
+import System.IO (stdin)
 import Data.Text.Format.Numbers (prettyI)
+import Control.Exception (catch, SomeException, displayException)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Streamly.Data.Fold as Fold
 import qualified Streamly.Data.Stream.Prelude as Stream
 import qualified Streamly.FileSystem.Handle as Handle
-import qualified Streamly.Internal.Data.Fold as Fold
-import qualified Streamly.Internal.Data.Ring as Ring
 import qualified Streamly.Unicode.Stream as Unicode
-import qualified System.Console.ANSI as ANSI
 
 --------------------------------------------------------------------------------
 -- Utils
@@ -52,13 +44,15 @@ double = fromIntegral
 --------------------------------------------------------------------------------
 
 data Boundary a b
-    = Start a
-    | End a (Maybe b)
+    = Start a b
+    | Record a b
+    | End a b
     deriving (Read, Show, Ord, Eq)
 
-getWindowId :: Boundary WindowId Label -> WindowId
-getWindowId (Start a) = a
-getWindowId (End a _) = a
+getNameSpace :: Boundary NameSpace PointId -> NameSpace
+getNameSpace (Start a _) = a
+getNameSpace (Record a _) = a
+getNameSpace (End a _) = a
 
 data Counter
     = ThreadCpuTime
@@ -68,8 +62,10 @@ data Counter
     | SchedOut
     deriving (Read, Show, Ord, Eq)
 
-type WindowId = String
-type Label = String
+type NameSpace = String
+type ModuleName = String
+type LineNum = Int
+type PointId = (ModuleName, LineNum)
 type ThreadId = Int32
 type Tag = String
 type Value = Int64
@@ -83,7 +79,7 @@ data EventId =
     deriving (Eq, Ord, Show)
 
 data UnboundedEvent
-    = UEvent (Boundary WindowId Label) ThreadId Counter Value
+    = UEvent (Boundary NameSpace PointId) ThreadId Counter Value
     deriving (Show)
 
 data Event
@@ -123,8 +119,12 @@ stats =
 --------------------------------------------------------------------------------
 
 -- Event format:
--- Start/<window-id>/<label>/<tid>/<counterName>/<value>
--- End/<window-id>/<label>/<tid>/<counterName/<value>
+-- Start,<tag>,<tid>,<counterName>,<value>
+-- Record,<tag>,<tid>,<counterName>,<value>
+-- End,<tag>,<tid>,<counterName,<value>
+
+-- Tag format:
+-- NameSpace[ModuleName:LineNumber]
 
 errorString :: String -> String -> String
 errorString line reason = [str|Error:
@@ -132,40 +132,59 @@ Line: #{line}
 Reason: #{reason}
 |]
 
-parseLineToEvent :: Monad m => String -> m (Either String UnboundedEvent)
-parseLineToEvent line = do
-    res <-
-        Stream.fromList line
-            & Stream.foldMany (Fold.takeEndBy_ (== '/') Fold.toList)
-            & Stream.toList
-    case res of
-        ["Start", windowId, tid, counter, val] ->
-            case withParsed (UEvent (Start windowId)) tid counter val of
-                Just val -> pure $ Right val
-                Nothing -> pure $ Left $ errorString line "Not valid"
-        ["End", windowId, tid, counter, val] ->
-            case withParsed (UEvent (End windowId Nothing)) tid counter val of
-                Just val -> pure $ Right val
-                Nothing -> pure $ Left $ errorString line "Not valid"
-        ["End", windowId, label, tid, counter, val] ->
-            case withParsed (UEvent (End windowId (Just label))) tid counter val of
-                Just val -> pure $ Right val
-                Nothing -> pure $ Left $ errorString line "Not valid"
-        _ -> pure $ Left $ errorString line "Chunks /= 4"
+fIntegral :: (Monad m, Integral a) => Fold m Char a
+fIntegral =
+    Fold.foldl' (\b a -> 10 * b + ord1 a) 0
+    where
+    ord1 a =
+        case ord a - 48 of
+            x ->
+                if x >= 0 || x <= 9
+                then fromIntegral x
+                else error "fIntegral: NaN"
+
+fEventBoundary ::
+    Monad m => Fold m Char (NameSpace -> PointId -> Boundary NameSpace PointId)
+fEventBoundary =
+    f <$> Fold.toList
+    where
+    f "Start" = Start
+    f "Record" = Record
+    f "End" = End
+    f _ = error "fEventBoundary: undefined"
+
+fCounterName :: Monad m => Fold m Char Counter
+fCounterName = read <$> Fold.toList
+
+fTag :: Monad m => Fold m Char (NameSpace, PointId)
+fTag =
+    (\a b c -> (a, (b, c)))
+        <$> Fold.takeEndBy_ (== '[') Fold.toList
+        <*> Fold.takeEndBy_ (== ':') Fold.toList
+        <*> Fold.takeEndBy_ (== ']') fIntegral
+
+fUnboundedEvent :: Monad m => Fold m Char UnboundedEvent
+fUnboundedEvent =
+    f
+        <$> (Fold.takeEndBy_ (== ',') fEventBoundary)
+        <*> (fTag <* Fold.one) -- fTag is a terminating fold
+        <*> (Fold.takeEndBy_ (== ',') fIntegral)
+        <*> (Fold.takeEndBy_ (== ',') fCounterName)
+        <*> fIntegral
 
     where
 
-    withParsed
-        :: (ThreadId -> Counter -> Value -> UnboundedEvent)
-        -> String
-        -> String
-        -> String
-        -> Maybe UnboundedEvent
-    withParsed func tid counter val =
-        func <$> readMaybe tid <*> readMaybe counter <*> readMaybe val
+    f a b c d e = UEvent (a (fst b) (snd b)) c d e
+
+parseLineToEvent :: String -> IO (Either String UnboundedEvent)
+parseLineToEvent line =
+    catch
+        (Right <$> Stream.fold fUnboundedEvent (Stream.fromList line))
+        (\(e :: SomeException) ->
+             pure (Left (errorString line (displayException e))))
 
 parseInputToEventStream
-    :: MonadIO m => Stream m (Array Word8) -> Stream m UnboundedEvent
+    :: Stream IO (Array Word8) -> Stream IO UnboundedEvent
 parseInputToEventStream inp =
     Unicode.decodeUtf8Chunks inp
         & Stream.foldMany
@@ -183,22 +202,39 @@ boundEvents = Fold step initial extract extract
     where
     initial = pure $ Partial (Nothing, Map.empty)
 
-    alterFunc :: UnboundedEvent -> Maybe Value -> (Maybe Event, Maybe Value)
-    alterFunc (UEvent (Start _) _ _ val) Nothing = (Nothing, Just val)
-    alterFunc (UEvent (Start _) _ _ val) (Just _) = (Nothing, Just val)
-    alterFunc (UEvent (End w Nothing) tid counter val) (Just prevVal) =
-        ( Just (Event (EventId tid counter w) (val - prevVal))
-        , Nothing
-        )
-    alterFunc (UEvent (End w (Just tag)) tid counter val) (Just prevVal) =
-        ( Just (Event (EventId tid counter (w ++ ":" ++ tag)) (val - prevVal))
-        , Just prevVal
-        )
+    alterFunc
+        :: UnboundedEvent
+        -> Maybe [(PointId, Value)]
+        -> (Maybe Event, Maybe [(PointId, Value)])
+    alterFunc (UEvent (Start _ point) _ _ val) Nothing =
+        (Nothing, Just [(point, val)])
+    alterFunc (UEvent (Start _ point) _ _ val) (Just xs) =
+        (Nothing, Just ((point, val):xs))
+    alterFunc (UEvent (End ns (md, ln)) tid counter val) (Just stk) =
+        case uncons stk of
+            Just (((md1, ln1), prevVal), stk1) ->
+                let lnStr = show ln
+                    ln1Str = show ln1
+                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                 in ( Just (Event (EventId tid counter win) (val - prevVal))
+                    , Just stk1
+                    )
+            Nothing -> error "boundEvents: Empty stack"
+    alterFunc (UEvent (Record ns (md, ln)) tid counter val) (Just stk) =
+        case uncons stk of
+            Just (((md1, ln1), prevVal), _) ->
+                let lnStr = show ln
+                    ln1Str = show ln1
+                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                 in ( Just (Event (EventId tid counter win) (val - prevVal))
+                    , Just stk
+                    )
+            Nothing -> error "boundEvents: Empty stack"
     alterFunc _ Nothing = (Nothing, Nothing)
 
     step (_, mp) uev@(UEvent b tid counter _) =
         pure $ Partial
-             $ Map.alterF (alterFunc uev) (getWindowId b, tid, counter) mp
+             $ Map.alterF (alterFunc uev) (getNameSpace b, tid, counter) mp
 
     extract (ev, _) = pure ev
 
@@ -208,7 +244,7 @@ statCollector =
 
     where
 
-    deriveFold ev = pure (Fold.lmap getEventVal stats)
+    deriveFold _ = pure (Fold.lmap getEventVal stats)
 
 --------------------------------------------------------------------------------
 -- Printing stats
@@ -233,14 +269,14 @@ printTable rows = do
     fillRow r = zipWith (\n x -> fill n x) maxLengths r
 
 printStatsMap
-    :: (Show a, Show b, Show c, Ord a, Ord b, Ord c)
+    :: (Show a, Show b, Show c, Ord a, Ord b)
     => (EventId -> a)
     -> (EventId -> b)
     -> (EventId -> c)
     -> Map EventId [(String, Int)]
     -> IO ()
-printStatsMap index1 index2 index3 mp =
-    mapM_ printOneTable $ Map.toList $ anchorOnTidAndCounter mp
+printStatsMap index1 index2 index3 mp0 =
+    mapM_ printOneTable $ Map.toList $ anchorOnTidAndCounter mp0
 
     where
 
@@ -305,3 +341,4 @@ main = do
                 (evTag)
                 (evTid)
                 statsMap
+        _ -> error "Undefined arg."

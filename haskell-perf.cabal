@@ -128,7 +128,5 @@ executable stat-collector
      , streamly-core
      , streamly
      , containers
-     , ansi-terminal
      , format-numbers
-     , unix
      , text

@@ -46,3 +46,6 @@ Windows can belong to certain namespaces.
 We can use the `NameSpace[ModuleName:LineNumber]` to identify a point,
 and `NameSpace[ModuleName:LineNumber-ModuleName:LineNumber]` to
 identify a window.
+
+We can consider the point to be in a global namespace if the namespace
+isn't mentioned.
