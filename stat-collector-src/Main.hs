@@ -46,12 +46,14 @@ double = fromIntegral
 data Boundary a b
     = Start a b
     | Record a b
+    | Restart a b
     | End a b
     deriving (Read, Show, Ord, Eq)
 
 getNameSpace :: Boundary NameSpace PointId -> NameSpace
 getNameSpace (Start a _) = a
 getNameSpace (Record a _) = a
+getNameSpace (Restart a _) = a
 getNameSpace (End a _) = a
 
 data Counter
@@ -121,6 +123,7 @@ stats =
 -- Event format:
 -- Start,<tag>,<tid>,<counterName>,<value>
 -- Record,<tag>,<tid>,<counterName>,<value>
+-- Restart,<tag>,<tid>,<counterName>,<value>
 -- End,<tag>,<tid>,<counterName,<value>
 
 -- Tag format:
@@ -150,6 +153,7 @@ fEventBoundary =
     where
     f "Start" = Start
     f "Record" = Record
+    f "Restart" = Restart
     f "End" = End
     f _ = error "fEventBoundary: undefined"
 
@@ -218,6 +222,16 @@ boundEvents = Fold step initial extract extract
                     win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
                  in ( Just (Event (EventId tid counter win) (val - prevVal))
                     , Just stk1
+                    )
+            Nothing -> error "boundEvents: Empty stack"
+    alterFunc (UEvent (Restart ns point@(md, ln)) tid counter val) (Just stk) =
+        case uncons stk of
+            Just (((md1, ln1), prevVal), stk1) ->
+                let lnStr = show ln
+                    ln1Str = show ln1
+                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                 in ( Just (Event (EventId tid counter win) (val - prevVal))
+                    , Just ((point ,val):stk1)
                     )
             Nothing -> error "boundEvents: Empty stack"
     alterFunc (UEvent (Record ns (md, ln)) tid counter val) (Just stk) =
