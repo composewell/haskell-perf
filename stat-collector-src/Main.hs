@@ -23,7 +23,8 @@ import Streamly.Internal.Data.Fold (Fold(..), Step(..))
 import Streamly.Unicode.String (str)
 import System.IO (stdin)
 import Data.Text.Format.Numbers (prettyI)
-import Control.Exception (catch, SomeException, displayException)
+import Control.Exception
+    (catch, SomeException, displayException, throwIO, ErrorCall(..))
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
@@ -135,39 +136,39 @@ Line: #{line}
 Reason: #{reason}
 |]
 
-fIntegral :: (Monad m, Integral a) => Fold m Char a
+fIntegral :: Integral a => Fold IO Char a
 fIntegral =
-    Fold.foldl' (\b a -> 10 * b + ord1 a) 0
+    Fold.foldlM' combine (pure 0)
     where
-    ord1 a =
+    combine b a =
         case ord a - 48 of
             x ->
                 if x >= 0 || x <= 9
-                then fromIntegral x
-                else error "fIntegral: NaN"
+                then pure $ fromIntegral x + b * 10
+                else throwIO $ ErrorCall "fIntegral: NaN"
 
 fEventBoundary ::
-    Monad m => Fold m Char (NameSpace -> PointId -> Boundary NameSpace PointId)
+    Fold IO Char (NameSpace -> PointId -> Boundary NameSpace PointId)
 fEventBoundary =
-    f <$> Fold.toList
+    Fold.rmapM f Fold.toList
     where
-    f "Start" = Start
-    f "Record" = Record
-    f "Restart" = Restart
-    f "End" = End
-    f _ = error "fEventBoundary: undefined"
+    f "Start" = pure Start
+    f "Record" = pure Record
+    f "Restart" = pure Restart
+    f "End" = pure End
+    f _ = throwIO $ ErrorCall "fEventBoundary: undefined"
 
 fCounterName :: Monad m => Fold m Char Counter
 fCounterName = read <$> Fold.toList
 
-fTag :: Monad m => Fold m Char (NameSpace, PointId)
+fTag :: Fold IO Char (NameSpace, PointId)
 fTag =
     (\a b c -> (a, (b, c)))
         <$> Fold.takeEndBy_ (== '[') Fold.toList
         <*> Fold.takeEndBy_ (== ':') Fold.toList
         <*> Fold.takeEndBy_ (== ']') fIntegral
 
-fUnboundedEvent :: Monad m => Fold m Char UnboundedEvent
+fUnboundedEvent :: Fold IO Char UnboundedEvent
 fUnboundedEvent =
     f
         <$> (Fold.takeEndBy_ (== ',') fEventBoundary)
