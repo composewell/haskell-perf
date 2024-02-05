@@ -12,7 +12,6 @@ import Data.Int (Int32, Int64)
 import System.Environment (getArgs)
 import Data.Function ((&))
 import Data.List (foldl', uncons)
-import Data.Char (ord)
 import Data.Map (Map)
 import Data.Maybe (fromJust)
 import Data.Word (Word8)
@@ -20,23 +19,16 @@ import Streamly.Data.Array (Array)
 import Streamly.Data.Fold (Fold)
 import Streamly.Data.Stream (Stream)
 import Streamly.Internal.Data.Fold (Fold(..), Step(..))
-import Streamly.Data.ParserK (ParserK)
 import Streamly.Unicode.String (str)
 import System.IO (stdin)
 import Data.Text.Format.Numbers (prettyI)
-import Control.Exception
-    (catch, SomeException, displayException, throwIO, ErrorCall(..))
-import qualified Streamly.Internal.Data.StreamK as StreamK (unfoldrM)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Streamly.Data.Fold as Fold
 import qualified Streamly.Data.Parser as Parser
-import qualified Streamly.Data.ParserK as ParserK
 import qualified Streamly.Data.Stream as Stream
-import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.FileSystem.Handle as Handle
-import qualified Streamly.Unicode.Stream as Unicode
 import qualified Streamly.Internal.Data.Array as Array
 import qualified Streamly.Internal.Data.Binary.Parser as Parser
 
@@ -53,7 +45,6 @@ double = fromIntegral
 -- Types
 --------------------------------------------------------------------------------
 
-type NameSpace = String
 type ModuleName = String
 type LineNum = Int32
 type PointId = (ModuleName, LineNum)

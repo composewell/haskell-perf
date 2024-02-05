@@ -42,9 +42,6 @@ import qualified Streamly.Internal.Data.MutByteArray as MBA
 import Prelude
 import Language.Haskell.TH
 
-#define PRIM_OP_AVAILABLE
--- #undef PRIM_OP_AVAILABLE
-
 #ifdef PRIM_OP_AVAILABLE
 import GHC.Exts (threadCPUTime#)
 #else

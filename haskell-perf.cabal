@@ -34,6 +34,11 @@ flag dev
   manual: True
   default: False
 
+flag prim-op
+  description: Prim-op is available
+  manual: True
+  default: False
+
 flag fusion-plugin
   description: Use fusion plugin for benchmarks and executables
   manual: True
@@ -104,6 +109,8 @@ common compile-options
       ghc-options:  -Wmissed-specialisations
                     -Wall-missed-specialisations
                     -fno-ignore-asserts
+    if flag(prim-op)
+      cpp-options:    -DPRIM_OP_AVAILABLE
 
 library
   import: compile-options
@@ -137,7 +144,20 @@ executable stat-collector
   build-depends:
        base
      , streamly-core
-     , streamly
+     , containers
+     , format-numbers
+     , text
+     , haskell-perf
+
+test-suite stat-test
+  import: compile-options
+  type:   exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
+  build-depends:
+       base
+     , streamly-core
      , containers
      , format-numbers
      , text
