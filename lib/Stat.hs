@@ -81,7 +81,7 @@ $(MBA.deriveSerialize [d|instance MBA.Serialize Counter|])
 data Metric =
     Metric
         { m_tid :: Int32
-        , m_namespace :: String
+        , m_namespace :: Int32
         , m_modName :: String
         , m_lineNum :: Int32
         , m_counter :: Counter
@@ -202,7 +202,7 @@ printMetricList handle mList = do
 
 
 eventGeneric ::
-    (forall b. IO b -> m b) -> String -> EvLoc -> SrcLoc -> Handle -> m ()
+    (forall b. IO b -> m b) -> Int32 -> EvLoc -> SrcLoc -> Handle -> m ()
 eventGeneric liftio namespace evLoc srcLoc handle = liftio $ do
     (a, b, c, d) <- getThreadStat
     let modName = loc_module srcLoc
@@ -233,19 +233,19 @@ withEvLoc f = do
 start :: Q Exp
 start = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Start (Loc a b c d e) perfHandle|]
+    [|eventGeneric id 0 Start (Loc a b c d e) perfHandle|]
 
 end :: Q Exp
 end = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" End (Loc a b c d e) perfHandle|]
+    [|eventGeneric id 0 End (Loc a b c d e) perfHandle|]
 
 record :: Q Exp
 record = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Record (Loc a b c d e) perfHandle|]
+    [|eventGeneric id 0 Record (Loc a b c d e) perfHandle|]
 
 restart :: Q Exp
 restart = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Restart (Loc a b c d e) perfHandle|]
+    [|eventGeneric id 0 Restart (Loc a b c d e) perfHandle|]

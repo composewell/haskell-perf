@@ -144,7 +144,8 @@ boundEvents = Fold step initial extract extract
             Just (((md1, ln1), prevVal), stk1) ->
                 let lnStr = show ln
                     ln1Str = show ln1
-                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                    nsStr = show ns
+                    win = [str|#{nsStr}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
                  in ( Just (Event (EventId tid counter win) (val - prevVal))
                     , Just stk1
                     )
@@ -154,7 +155,8 @@ boundEvents = Fold step initial extract extract
             Just (((md1, ln1), prevVal), stk1) ->
                 let lnStr = show ln
                     ln1Str = show ln1
-                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                    nsStr = show ns
+                    win = [str|#{nsStr}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
                  in ( Just (Event (EventId tid counter win) (val - prevVal))
                     , Just (((md, ln) ,val):stk1)
                     )
@@ -164,7 +166,8 @@ boundEvents = Fold step initial extract extract
             Just (((md1, ln1), prevVal), _) ->
                 let lnStr = show ln
                     ln1Str = show ln1
-                    win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
+                    nsStr = show ns
+                    win = [str|#{nsStr}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
                  in ( Just (Event (EventId tid counter win) (val - prevVal))
                     , Just stk
                     )
