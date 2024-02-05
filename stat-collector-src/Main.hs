@@ -20,18 +20,27 @@ import Streamly.Data.Array (Array)
 import Streamly.Data.Fold (Fold)
 import Streamly.Data.Stream (Stream)
 import Streamly.Internal.Data.Fold (Fold(..), Step(..))
+import Streamly.Data.ParserK (ParserK)
 import Streamly.Unicode.String (str)
 import System.IO (stdin)
 import Data.Text.Format.Numbers (prettyI)
 import Control.Exception
     (catch, SomeException, displayException, throwIO, ErrorCall(..))
+import qualified Streamly.Internal.Data.StreamK as StreamK (unfoldrM)
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Streamly.Data.Fold as Fold
-import qualified Streamly.Data.Stream.Prelude as Stream
+import qualified Streamly.Data.Parser as Parser
+import qualified Streamly.Data.ParserK as ParserK
+import qualified Streamly.Data.Stream as Stream
+import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.FileSystem.Handle as Handle
 import qualified Streamly.Unicode.Stream as Unicode
+import qualified Streamly.Internal.Data.Array as Array
+import qualified Streamly.Internal.Data.Binary.Parser as Parser
+
+import Stat
 
 --------------------------------------------------------------------------------
 -- Utils
@@ -44,30 +53,9 @@ double = fromIntegral
 -- Types
 --------------------------------------------------------------------------------
 
-data Boundary a b
-    = Start a b
-    | Record a b
-    | Restart a b
-    | End a b
-    deriving (Read, Show, Ord, Eq)
-
-getNameSpace :: Boundary NameSpace PointId -> NameSpace
-getNameSpace (Start a _) = a
-getNameSpace (Record a _) = a
-getNameSpace (Restart a _) = a
-getNameSpace (End a _) = a
-
-data Counter
-    = ThreadCpuTime
-    | ProcessCpuTime
-    | WallClockTime
-    | Allocated
-    | SchedOut
-    deriving (Read, Show, Ord, Eq)
-
 type NameSpace = String
 type ModuleName = String
-type LineNum = Int
+type LineNum = Int32
 type PointId = (ModuleName, LineNum)
 type ThreadId = Int32
 type Tag = String
@@ -80,10 +68,6 @@ data EventId =
         , evTag :: Tag
         }
     deriving (Eq, Ord, Show)
-
-data UnboundedEvent
-    = UEvent (Boundary NameSpace PointId) ThreadId Counter Value
-    deriving (Show)
 
 data Event
     = Event EventId Value
@@ -121,101 +105,41 @@ stats =
 -- Parsing Input
 --------------------------------------------------------------------------------
 
--- Event format:
--- Start,<tag>,<tid>,<counterName>,<value>
--- Record,<tag>,<tid>,<counterName>,<value>
--- Restart,<tag>,<tid>,<counterName>,<value>
--- End,<tag>,<tid>,<counterName,<value>
+-- Use ParserK here?
+-- There are only 1 inner bind, ParserD should work fine.
+metricParser :: Parser.Parser Word8 IO Metric
+metricParser = do
+    size64 <- Parser.int64le
+    let size = fromIntegral size64 - 8
+    fmap Array.deserialize $ Parser.takeEQ size (Array.unsafeCreateOf size)
 
--- Tag format:
--- NameSpace[ModuleName:LineNumber]
-
-errorString :: String -> String -> String
-errorString line reason = [str|Error:
-Line: #{line}
-Reason: #{reason}
-|]
-
-fIntegral :: Integral a => Fold IO Char a
-fIntegral =
-    Fold.foldlM' combine (pure 0)
-    where
-    combine b a =
-        case ord a - 48 of
-            x ->
-                if x >= 0 || x <= 9
-                then pure $ fromIntegral x + b * 10
-                else throwIO $ ErrorCall "fIntegral: NaN"
-
-fEventBoundary ::
-    Fold IO Char (NameSpace -> PointId -> Boundary NameSpace PointId)
-fEventBoundary =
-    Fold.rmapM f Fold.toList
-    where
-    f "Start" = pure Start
-    f "Record" = pure Record
-    f "Restart" = pure Restart
-    f "End" = pure End
-    f _ = throwIO $ ErrorCall "fEventBoundary: undefined"
-
-fCounterName :: Monad m => Fold m Char Counter
-fCounterName = read <$> Fold.toList
-
-fTag :: Fold IO Char (NameSpace, PointId)
-fTag =
-    (\a b c -> (a, (b, c)))
-        <$> Fold.takeEndBy_ (== '[') Fold.toList
-        <*> Fold.takeEndBy_ (== ':') Fold.toList
-        <*> Fold.takeEndBy_ (== ']') fIntegral
-
-fUnboundedEvent :: Fold IO Char UnboundedEvent
-fUnboundedEvent =
-    f
-        <$> (Fold.takeEndBy_ (== ',') fEventBoundary)
-        <*> (fTag <* Fold.one) -- fTag is a terminating fold
-        <*> (Fold.takeEndBy_ (== ',') fIntegral)
-        <*> (Fold.takeEndBy_ (== ',') fCounterName)
-        <*> fIntegral
-
-    where
-
-    f a b c d e = UEvent (a (fst b) (snd b)) c d e
-
-parseLineToEvent :: String -> IO (Either String UnboundedEvent)
-parseLineToEvent line =
-    catch
-        (Right <$> Stream.fold fUnboundedEvent (Stream.fromList line))
-        (\(e :: SomeException) ->
-             pure (Left (errorString line (displayException e))))
-
+-- parseMany can be implemented in a recursive manner using parserK
 parseInputToEventStream
-    :: Stream IO (Array Word8) -> Stream IO UnboundedEvent
+    :: Stream IO (Array Word8) -> Stream IO Metric
 parseInputToEventStream inp =
-    Unicode.decodeUtf8Chunks inp
-        & Stream.foldMany
-              (Fold.takeEndBy_
-                   (== '\n')
-                   (Fold.rmapM parseLineToEvent Fold.toList))
-        & Stream.catRights
+    fmap f $ Stream.parseMany metricParser $ Array.concat inp
+    where
+    f (Left err) = error $ show err
+    f (Right v) = v
 
 --------------------------------------------------------------------------------
 -- Processing stats
 --------------------------------------------------------------------------------
 
-boundEvents :: Monad m => Fold m UnboundedEvent (Maybe Event)
+boundEvents :: Monad m => Fold m Metric (Maybe Event)
 boundEvents = Fold step initial extract extract
     where
     initial = pure $ Partial (Nothing, Map.empty)
 
     alterFunc
-        :: UnboundedEvent
+        :: Metric
         -> Maybe [(PointId, Value)]
         -> (Maybe Event, Maybe [(PointId, Value)])
-    alterFunc (UEvent (Start _ point) _ _ val) Nothing =
-        (Nothing, Just [(point, val)])
-    alterFunc (UEvent (Start _ point) _ _ val) (Just xs) =
-        (Nothing, Just ((point, val):xs))
-    alterFunc (UEvent (End ns (md, ln)) tid counter val) (Just stk) =
+    alterFunc (Metric _ _ m l _ Start val) Nothing =
+        (Nothing, Just [((m, l), val)])
+    alterFunc (Metric _ _ m l _ Start val) (Just xs) =
+        (Nothing, Just (((m, l), val):xs))
+    alterFunc (Metric tid ns md ln counter End val) (Just stk) =
         case uncons stk of
             Just (((md1, ln1), prevVal), stk1) ->
                 let lnStr = show ln
@@ -225,17 +149,17 @@ boundEvents = Fold step initial extract extract
                     , Just stk1
                     )
             Nothing -> error "boundEvents: Empty stack"
-    alterFunc (UEvent (Restart ns point@(md, ln)) tid counter val) (Just stk) =
+    alterFunc (Metric tid ns md ln counter Restart val) (Just stk) =
         case uncons stk of
             Just (((md1, ln1), prevVal), stk1) ->
                 let lnStr = show ln
                     ln1Str = show ln1
                     win = [str|#{ns}[#{md1}:#{ln1Str}-#{md}:#{lnStr}]|]
                  in ( Just (Event (EventId tid counter win) (val - prevVal))
-                    , Just ((point ,val):stk1)
+                    , Just (((md, ln) ,val):stk1)
                     )
             Nothing -> error "boundEvents: Empty stack"
-    alterFunc (UEvent (Record ns (md, ln)) tid counter val) (Just stk) =
+    alterFunc (Metric tid ns md ln counter Record val) (Just stk) =
         case uncons stk of
             Just (((md1, ln1), prevVal), _) ->
                 let lnStr = show ln
@@ -247,9 +171,9 @@ boundEvents = Fold step initial extract extract
             Nothing -> error "boundEvents: Empty stack"
     alterFunc _ Nothing = (Nothing, Nothing)
 
-    step (_, mp) uev@(UEvent b tid counter _) =
+    step (_, mp) uev@(Metric tid ns _ _ counter _ _) =
         pure $ Partial
-             $ Map.alterF (alterFunc uev) (getNameSpace b, tid, counter) mp
+             $ Map.alterF (alterFunc uev) (ns, tid, counter) mp
 
     extract (ev, _) = pure ev
 

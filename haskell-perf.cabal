@@ -141,3 +141,4 @@ executable stat-collector
      , containers
      , format-numbers
      , text
+     , haskell-perf

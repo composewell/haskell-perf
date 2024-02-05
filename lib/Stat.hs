@@ -41,6 +41,9 @@ import qualified Streamly.Internal.Data.MutByteArray as MBA
 import Prelude
 import Language.Haskell.TH
 
+#define PRIM_OP_AVAILABLE
+-- #undef PRIM_OP_AVAILABLE
+
 #ifdef PRIM_OP_AVAILABLE
 import GHC.Exts (threadCPUTime#)
 #else
@@ -77,12 +80,14 @@ $(MBA.deriveSerialize [d|instance MBA.Serialize Counter|])
 data Metric =
     Metric
         { m_tid :: Int32
+        , m_namespace :: String
         , m_modName :: String
         , m_lineNum :: Int32
         , m_counter :: Counter
         , m_location :: EvLoc
         , m_value :: Int64
         }
+    deriving (Show)
 $(MBA.deriveSerialize [d|instance MBA.Serialize Metric|])
 
 {-# INLINE tenPow9 #-}
@@ -178,8 +183,8 @@ printMetricList mList = do
     putChunk stdout arr
 
 
-eventGeneric :: (forall b. IO b -> m b) -> EvLoc -> SrcLoc -> m ()
-eventGeneric liftio evLoc srcLoc = liftio $ do
+eventGeneric :: (forall b. IO b -> m b) -> String -> EvLoc -> SrcLoc -> m ()
+eventGeneric liftio namespace evLoc srcLoc = liftio $ do
     (a, b, c, d) <- getThreadStat
     let modName = loc_module srcLoc
     let lnNum = (fromIntegral :: Int -> Int32) $ fst (loc_start srcLoc)
@@ -187,11 +192,11 @@ eventGeneric liftio evLoc srcLoc = liftio $ do
     wTimeU <- getCurrentTime
     let wTime = round $ diffUTCTime wTimeU epochTime * 1e9
     let mList =
-            [ Metric a modName lnNum ThreadCpuTime evLoc b
-            , Metric a modName lnNum Allocated evLoc c
-            , Metric a modName lnNum SchedOut evLoc d
-            , Metric a modName lnNum ProcessCpuTime evLoc pCpuTime
-            , Metric a modName lnNum WallClockTime evLoc wTime
+            [ Metric a namespace modName lnNum ThreadCpuTime evLoc b
+            , Metric a namespace modName lnNum Allocated evLoc c
+            , Metric a namespace modName lnNum SchedOut evLoc d
+            , Metric a namespace modName lnNum ProcessCpuTime evLoc pCpuTime
+            , Metric a namespace modName lnNum WallClockTime evLoc wTime
             ]
 {-
     shouldStat <- testBitOn (fromEnum win) statEnv
@@ -209,19 +214,19 @@ withEvLoc f = do
 start :: Q Exp
 start = do
     Loc a b c d e <- location
-    [|\liftio -> eventGeneric liftio Start (Loc a b c d e)|]
+    [|eventGeneric id "g" Start (Loc a b c d e)|]
 
 end :: Q Exp
 end = do
     Loc a b c d e <- location
-    [|\liftio -> eventGeneric liftio End (Loc a b c d e)|]
+    [|eventGeneric id "g" End (Loc a b c d e)|]
 
 record :: Q Exp
 record = do
     Loc a b c d e <- location
-    [|\liftio -> eventGeneric liftio Record (Loc a b c d e)|]
+    [|eventGeneric id "g" Record (Loc a b c d e)|]
 
 restart :: Q Exp
 restart = do
     Loc a b c d e <- location
-    [|\liftio -> eventGeneric liftio Restart (Loc a b c d e)|]
+    [|eventGeneric id "g" Restart (Loc a b c d e)|]
