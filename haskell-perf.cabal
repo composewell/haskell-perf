@@ -105,6 +105,17 @@ common compile-options
                     -Wall-missed-specialisations
                     -fno-ignore-asserts
 
+library
+  import: compile-options
+  hs-source-dirs: lib
+  exposed-modules: Stat
+  ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
+  build-depends:
+       base >= 4.9 && < 5
+     , streamly-core == 0.2.2
+     , time
+     , template-haskell
+
 executable hperf
   import: compile-options
   hs-source-dirs: src
@@ -114,7 +125,7 @@ executable hperf
   build-depends:
        base >= 4.9 && < 5
      , containers
-     , streamly-core == 0.2.0
+     , streamly-core == 0.2.2
      , format-numbers
      , text
 
