@@ -26,7 +26,8 @@ import GHC.IO(IO(..))
 import GHC.IO.Unsafe (unsafePerformIO)
 import GHC.Int(Int64(..), Int32(..))
 import System.Environment (lookupEnv)
-import System.IO (stdout)
+import System.IO
+    (openFile, IOMode(..), Handle, BufferMode(..), hSetBuffering, hClose)
 -- import Streamly.Unicode.String (str)
 import System.CPUTime (getCPUTime)
 import Data.Time.Clock (getCurrentTime, UTCTime(..), diffUTCTime)
@@ -93,6 +94,23 @@ $(MBA.deriveSerialize [d|instance MBA.Serialize Metric|])
 {-# INLINE tenPow9 #-}
 tenPow9 :: Int64
 tenPow9 = 1000000000
+
+--------------------------------------------------------------------------------
+-- Perf handle
+--------------------------------------------------------------------------------
+
+-- Perf handle
+-- Can we rely on the RTS to close the handle?
+perfHandle :: Handle
+perfHandle =
+    unsafePerformIO $ do
+        h <- openFile "perf.bin" WriteMode
+        hSetBuffering h NoBuffering
+        pure h
+
+closePerfHandle :: IO ()
+closePerfHandle = hClose perfHandle
+
 
 --------------------------------------------------------------------------------
 -- Window Type
@@ -173,18 +191,19 @@ getThreadStat = do
         , fromIntegral switches
         )
 
-printMetricList :: [Metric] -> IO ()
-printMetricList mList = do
+printMetricList :: Handle -> [Metric] -> IO ()
+printMetricList handle mList = do
     arr <-
         Array.fromChunksK
             $ StreamK.mapM sizedSerialize
             $ StreamK.fromStream
             $ Stream.fromList mList
-    putChunk stdout arr
+    putChunk handle arr
 
 
-eventGeneric :: (forall b. IO b -> m b) -> String -> EvLoc -> SrcLoc -> m ()
-eventGeneric liftio namespace evLoc srcLoc = liftio $ do
+eventGeneric ::
+    (forall b. IO b -> m b) -> String -> EvLoc -> SrcLoc -> Handle -> m ()
+eventGeneric liftio namespace evLoc srcLoc handle = liftio $ do
     (a, b, c, d) <- getThreadStat
     let modName = loc_module srcLoc
     let lnNum = (fromIntegral :: Int -> Int32) $ fst (loc_start srcLoc)
@@ -204,7 +223,7 @@ eventGeneric liftio namespace evLoc srcLoc = liftio $ do
     then printMetricList mList
     else pure ()
 -}
-    printMetricList mList
+    printMetricList handle mList
 
 withEvLoc :: Q Exp -> Q Exp
 withEvLoc f = do
@@ -214,19 +233,19 @@ withEvLoc f = do
 start :: Q Exp
 start = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Start (Loc a b c d e)|]
+    [|eventGeneric id "g" Start (Loc a b c d e) perfHandle|]
 
 end :: Q Exp
 end = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" End (Loc a b c d e)|]
+    [|eventGeneric id "g" End (Loc a b c d e) perfHandle|]
 
 record :: Q Exp
 record = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Record (Loc a b c d e)|]
+    [|eventGeneric id "g" Record (Loc a b c d e) perfHandle|]
 
 restart :: Q Exp
 restart = do
     Loc a b c d e <- location
-    [|eventGeneric id "g" Restart (Loc a b c d e)|]
+    [|eventGeneric id "g" Restart (Loc a b c d e) perfHandle|]
