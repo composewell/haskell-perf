@@ -107,6 +107,15 @@ common compile-options
                     -Wall-missed-specialisations
                     -fno-ignore-asserts
 
+executable console-loop-multi-thread
+  import: compile-options
+  hs-source-dirs: examples
+  ghc-options: -threaded -rtsopts
+  main-is: console-loop-multi-thread.hs
+  build-depends:
+       base >= 4.9 && < 5
+     , unix
+
 executable hperf
   import: compile-options
   hs-source-dirs: src
