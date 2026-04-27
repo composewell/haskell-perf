@@ -1,3 +1,6 @@
+-- Until we fix the use of "head"
+{-# OPTIONS_GHC "-Wno-x-partial" #-}
+
 module Main (main) where
 
 import Aggregator
@@ -142,11 +145,11 @@ toStats = Fold.demuxKvToMap (\k -> pure (Just (f1 k)))
 
     f k1 collectStats =
           Fold.lmap (\x -> (k1, x))
-        -- $ Fold.lmapM (\x -> print x >> pure x)
+        --  $ Fold.lmapM (\x -> print x >> pure x)
         $ postscanlMaybe collectThreadCounter
         $ Fold.postscanl collectStats
-        -- $ Fold.filter (\kv -> snd (snd kv !! 0) > 50000)
-        -- $ Fold.trace print
+        --  $ Fold.filter (\kv -> snd (snd kv !! 0) > 50000)
+        --  $ Fold.trace print
         $ Fold.latest
 
     -- For the main thread
@@ -442,7 +445,7 @@ main = do
             -- TODO: get the sorting field from Config/CLI
               -- List.sortOn (getStatField "tid")
             -- TODO: get the threshold from Config/CLI
-            -- $ filter (\x -> fromJust (getStatField "total" x) > 0)
+            --  $ filter (\x -> fromJust (getStatField "total" x) > 0)
               map (\(k, v) -> (k, filter (\(k1,_) -> k1 /= "latest") v))
             $ map (\(k, v) -> (k, fromJust v))
             $ filter (\(_, v) -> isJust v)
