@@ -29,7 +29,6 @@ import qualified Streamly.Data.Fold as Fold
 import qualified Streamly.Data.Stream as Stream
 import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.Data.Parser as Parser
-import qualified Streamly.Data.ParserK as ParserK
 
 {-
 #define EVENT_HEADER_BEGIN    0x68647262
@@ -73,18 +72,18 @@ eventTypeEnd = w8 "ete\0"
 -- (event Id, event size)
 eventType :: ParserK (Array Word8) IO (Int, Int)
 eventType = do
-    _ <- ParserK.adaptC (Parser.listEq eventTypeBegin)
-    eventId <- ParserK.adaptC word16be
+    _ <- Array.toParserK (Parser.listEq eventTypeBegin)
+    eventId <- Array.toParserK word16be
     -- ParserK.fromEffect $ print $ "Event id =" ++ show eventId
-    eventSize <- ParserK.adaptC int16be
+    eventSize <- Array.toParserK int16be
     -- ParserK.fromEffect $ print $ "Event size =" ++ show eventSize
-    descLen <- ParserK.adaptC word32be
-    _desc <- ParserK.adaptC (Parser.takeEQ (fromIntegral descLen) Fold.toList)
+    descLen <- Array.toParserK word32be
+    _desc <- Array.toParserK (Parser.takeEQ (fromIntegral descLen) Fold.toList)
     -- ParserK.fromEffect $ putStrLn (map (chr . fromIntegral) desc)
-    infoLen <- ParserK.adaptC word32be
+    infoLen <- Array.toParserK word32be
     -- ParserK.fromEffect $ print $ "info len =" ++ show infoLen
-    ParserK.adaptC (Parser.takeEQ (fromIntegral infoLen) Fold.drain)
-    _ <- ParserK.adaptC (Parser.listEq eventTypeEnd)
+    Array.toParserK (Parser.takeEQ (fromIntegral infoLen) Fold.drain)
+    _ <- Array.toParserK (Parser.listEq eventTypeEnd)
     return (fromIntegral eventId, fromIntegral eventSize)
 
 ---------------------
@@ -109,7 +108,7 @@ parseEventTypes ::
     -> IO (Map.IntMap Int, StreamK IO (Array Word8))
 parseEventTypes kv stream = do
     -- putStrLn "parsing eventType"
-    (r, rest) <- StreamK.parseBreakChunks eventType stream
+    (r, rest) <- Array.parseBreak eventType stream
     case r of
         -- XXX When the parser fails the original stream should not change, we
         -- should be able to use "rest" here.
@@ -120,14 +119,14 @@ parseEventTypes kv stream = do
 
 headerPre :: ParserK (Array Word8) IO ()
 headerPre = do
-    _ <- ParserK.adaptC (Parser.listEq headerBegin)
-    _ <- ParserK.adaptC (Parser.listEq hetBegin)
+    _ <- Array.toParserK (Parser.listEq headerBegin)
+    _ <- Array.toParserK (Parser.listEq hetBegin)
     return ()
 
 headerPost :: ParserK (Array Word8) IO ()
 headerPost = do
-    _ <- ParserK.adaptC (Parser.listEq hetEnd)
-    _ <- ParserK.adaptC (Parser.listEq headerEnd)
+    _ <- Array.toParserK (Parser.listEq hetEnd)
+    _ <- Array.toParserK (Parser.listEq headerEnd)
     return ()
 
 {-
@@ -147,12 +146,12 @@ header = do
 parseLogHeader ::
     StreamK IO (Array Word8) -> IO (Map.IntMap Int, StreamK IO (Array Word8))
 parseLogHeader stream = do
-    (res, rest) <- StreamK.parseBreakChunks headerPre stream
+    (res, rest) <- Array.parseBreak headerPre stream
     case res of
         Left err -> fail $ show err
         Right () -> do
             (kv, rest1) <- parseEventTypes Map.empty rest
-            (res1, rest2) <- StreamK.parseBreakChunks headerPost rest1
+            (res1, rest2) <- Array.parseBreak headerPost rest1
             case res1 of
                 Left err -> putStrLn "header end not found" >> (fail $ show err)
                 Right () -> return (kv, rest2)
@@ -169,8 +168,8 @@ dataBegin = w8 "datb"
 
 parseDataHeader :: StreamK IO (Array Word8) -> IO (StreamK IO (Array Word8))
 parseDataHeader stream = do
-    let p = ParserK.adaptC (Parser.listEq dataBegin)
-    (res, rest) <- StreamK.parseBreakChunks p stream
+    let p = Array.toParserK (Parser.listEq dataBegin)
+    (res, rest) <- Array.parseBreak p stream
     case res of
         Left err -> fail $ show err
         Right _ -> return rest
@@ -374,5 +373,5 @@ parseEvents kv =
       Stream.catMaybes
     . Stream.catRights
     . Stream.parseMany (event kv)
-    . Stream.unfoldMany Array.reader
+    . Stream.unfoldEach Array.reader
     . StreamK.toStream

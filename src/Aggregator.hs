@@ -9,7 +9,8 @@ import Data.Int (Int64)
 import Data.Set (Set)
 import Data.Word (Word32)
 import EventParser (Event (..), Counter(..), Location(..))
-import Streamly.Internal.Data.Fold (Fold(..), Step(..))
+import Streamly.Internal.Data.Fold (Step(..))
+import Streamly.Internal.Data.Scanl (Scanl(..))
 import Streamly.Internal.Data.Tuple.Strict (Tuple'(..))
 
 import qualified Data.List as List
@@ -51,8 +52,8 @@ import qualified Data.Set as Set
 newtype Window = Window (Set Word32) -- thread ids that have joined the window
 
 {-# INLINE translateThreadEvents #-}
-translateThreadEvents :: Fold IO Event [Event]
-translateThreadEvents = Fold step initial extract extract
+translateThreadEvents :: Scanl IO Event [Event]
+translateThreadEvents = Scanl step initial extract extract
 
     where
 
@@ -202,9 +203,9 @@ data CollectState =
 -- XXX Pass the window, counter as well for information in errors
 {-# INLINE collectThreadCounter #-}
 collectThreadCounter ::
-    Fold IO ((Word32, String, Counter), (Location, Int64))
+    Scanl IO ((Word32, String, Counter), (Location, Int64))
     (Maybe (Either (Maybe Int64) Int64))
-collectThreadCounter = Fold step initial extract extract
+collectThreadCounter = Scanl step initial extract extract
 
     where
 

@@ -24,7 +24,9 @@ import EventParser
 import Streamly.Data.Array (Array)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
-import Streamly.Internal.Data.Fold (Fold (..))
+import Streamly.Internal.Data.Fold (Fold (..), postscanlMaybe)
+import qualified Streamly.Data.Scanl as Scanl
+import qualified Streamly.Internal.Data.Scanl as Scanl (scanlMany)
 import System.Environment (getArgs)
 import Text.Printf (printf)
 
@@ -36,7 +38,8 @@ import qualified Streamly.Data.Fold as Fold
 import qualified Streamly.Data.Stream as Stream
 import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.Data.Unfold as Unfold
-import qualified Streamly.FileSystem.File as File
+import qualified Streamly.FileSystem.FileIO as File
+import qualified Streamly.FileSystem.Path as Path
 import qualified Streamly.Internal.Data.Fold as Fold
     (demuxKvToMap, kvToMap)
 
@@ -67,11 +70,11 @@ secondMaybe f = fmap f1 (Fold.unzip (fmap fromJust Fold.the) f)
 double :: Int -> Double
 double = fromIntegral
 
-untilLeft :: Monad m => Fold m b1 b2 -> Fold m (Either (Maybe b1) b1) b2
+untilLeft :: Monad m => Scanl.Scanl m b1 b2 -> Scanl.Scanl m (Either (Maybe b1) b1) b2
 untilLeft f =
-      Fold.takeEndBy isLeft
-    $ Fold.lmap (either id Just)
-    $ Fold.catMaybes f
+      Scanl.takeEndBy isLeft
+    $ Scanl.lmap (either id Just)
+    $ Scanl.catMaybes f
 
 {-
 {-# INLINE combineStats #-}
@@ -101,27 +104,37 @@ combineWindowStats = Fold.kvToMap combineStats
 -}
 
 -- Statistics collection for each counter
+scanlStdDev :: (Monad m, Floating a, Ord a) => Scanl.Scanl m a a
+scanlStdDev = fmap extract $ Scanl.mkScanl step (0 :: Int, 0, 0)
+    where
+    step (n, s, s2) x = (n + 1, s + x, s2 + x * x)
+    extract (n, s, s2)
+        | n < 2 = 0
+        | otherwise =
+            let mean = s / fromIntegral n
+             in sqrt (max 0 (s2 / fromIntegral n - mean * mean))
+
 {-# INLINE stats #-}
-stats :: Fold IO Int64 [(String, Int)]
+stats :: Scanl.Scanl IO Int64 [(String, Int)]
 stats =
-      Fold.lmap (fromIntegral :: Int64 -> Int)
-    $ Fold.distribute
-        [ fmap (\x -> ("latest", fromJust x)) Fold.latest
-        , fmap (\x -> ("total", x)) Fold.sum
-        , fmap (\x -> ("count", x)) Fold.length
-        , fmap (\x -> ("avg", round x)) (Fold.lmap double Fold.mean)
-        , fmap (\x -> ("minimum", fromJust x)) Fold.minimum
-        , fmap (\x -> ("maximum", fromJust x)) Fold.maximum
-        , fmap (\x -> ("stddev", round x)) (Fold.lmap double Fold.stdDev)
+      Scanl.lmap (fromIntegral :: Int64 -> Int)
+    $ Scanl.distribute
+        [ fmap (\x -> ("latest", fromJust x)) Scanl.latest
+        , fmap (\x -> ("total", x)) Scanl.sum
+        , fmap (\x -> ("count", x)) Scanl.length
+        , fmap (\x -> ("avg", round x)) (Scanl.lmap double Scanl.mean)
+        , fmap (\x -> ("minimum", fromJust x)) Scanl.minimum
+        , fmap (\x -> ("maximum", fromJust x)) Scanl.maximum
+        , fmap (\x -> ("stddev", round x)) (Scanl.lmap double scanlStdDev)
         ]
 
 {-# INLINE threadStats #-}
-threadStats :: Fold IO (Either (Maybe Int64) Int64) [(String, Int)]
+threadStats :: Scanl.Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
 threadStats = untilLeft stats
 
 {-# INLINE windowStats #-}
-windowStats :: Fold IO (Either (Maybe Int64) Int64) [(String, Int)]
-windowStats = Fold.many (untilLeft Fold.sum) stats
+windowStats :: Scanl.Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
+windowStats = Scanl.scanlMany (untilLeft Scanl.sum) stats
 
 {-# INLINE toStats #-}
 toStats ::
@@ -138,8 +151,8 @@ toStats = Fold.demuxKvToMap (\k -> pure (Just (f1 k)))
     f k1 collectStats =
           Fold.lmap (\x -> (k1, x))
         -- $ Fold.lmapM (\x -> print x >> pure x)
-        $ Fold.scanMaybe collectThreadCounter
-        $ Fold.postscan collectStats
+        $ postscanlMaybe collectThreadCounter
+        $ Fold.postscanl collectStats
         -- $ Fold.filter (\kv -> snd (snd kv !! 0) > 50000)
         -- $ Fold.trace print
         $ Fold.latest
@@ -155,8 +168,8 @@ generateEvents ::
     -> StreamK IO (Array Word8)
     -> Stream IO Event
 generateEvents kv =
-          Stream.unfoldMany Unfold.fromList
-        . Stream.postscan translateThreadEvents
+          Stream.unfoldEach Unfold.fromList
+        . Stream.postscanl translateThreadEvents
         -- . Stream.trace print
         . parseEvents kv
 
@@ -420,7 +433,7 @@ main :: IO ()
 main = do
     let flattenWindows = False
     (path:[]) <- getArgs
-    let stream = File.readChunks path
+    let stream = File.readChunks (Path.fromString_ path)
     (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
     -- putStrLn $ show kv
     events <- parseDataHeader rest
