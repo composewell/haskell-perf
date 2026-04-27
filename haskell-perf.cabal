@@ -117,5 +117,6 @@ executable hperf
        base >= 4.9 && < 5
      , containers
      , streamly-core >= 0.3.0 && < 0.4
+     , streamly-statistics
      , format-numbers
      , text

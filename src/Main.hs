@@ -26,7 +26,8 @@ import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
 import Streamly.Internal.Data.Fold (Fold (..), postscanlMaybe)
 import qualified Streamly.Data.Scanl as Scanl
-import qualified Streamly.Internal.Data.Scanl as Scanl (scanlMany)
+import qualified Streamly.Internal.Data.Scanl as Scanl (scanlMany, cumulativeScan)
+import qualified Streamly.Statistics.Scanl as Stats
 import System.Environment (getArgs)
 import Text.Printf (printf)
 
@@ -104,15 +105,6 @@ combineWindowStats = Fold.kvToMap combineStats
 -}
 
 -- Statistics collection for each counter
-scanlStdDev :: (Monad m, Floating a, Ord a) => Scanl.Scanl m a a
-scanlStdDev = fmap extract $ Scanl.mkScanl step (0 :: Int, 0, 0)
-    where
-    step (n, s, s2) x = (n + 1, s + x, s2 + x * x)
-    extract (n, s, s2)
-        | n < 2 = 0
-        | otherwise =
-            let mean = s / fromIntegral n
-             in sqrt (max 0 (s2 / fromIntegral n - mean * mean))
 
 {-# INLINE stats #-}
 stats :: Scanl.Scanl IO Int64 [(String, Int)]
@@ -125,7 +117,7 @@ stats =
         , fmap (\x -> ("avg", round x)) (Scanl.lmap double Scanl.mean)
         , fmap (\x -> ("minimum", fromJust x)) Scanl.minimum
         , fmap (\x -> ("maximum", fromJust x)) Scanl.maximum
-        , fmap (\x -> ("stddev", round x)) (Scanl.lmap double scanlStdDev)
+        , fmap (\x -> ("stddev", round x)) (Scanl.lmap double (Scanl.cumulativeScan Stats.incrStdDev))
         ]
 
 {-# INLINE threadStats #-}
