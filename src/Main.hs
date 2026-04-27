@@ -31,7 +31,7 @@ import Streamly.Internal.Data.Fold (Fold (..), postscanlMaybe)
 import qualified Streamly.Data.Scanl as Scanl
 import qualified Streamly.Internal.Data.Scanl as Scanl (scanlMany, cumulativeScan)
 import qualified Streamly.Statistics.Scanl as Stats
-import System.Environment (getArgs)
+import Options.Applicative
 import Text.Printf (printf)
 
 import qualified Data.List as List
@@ -182,7 +182,7 @@ printTable :: [[String]] -> IO ()
 printTable rows = do
     case map (unwords . fillRow) rows of
         [] -> putStrLn "printTable: empty rows"
-        (header:rest) -> putStrLn $ unlines $ header:unwords separatorRow:rest
+        (hdr:rest) -> putStrLn $ unlines $ hdr:unwords separatorRow:rest
 
     where
 
@@ -195,11 +195,12 @@ getStatField :: String -> (k, [(String, Int)]) -> Maybe Int
 getStatField x kv = List.lookup x $ snd kv
 
 printWindowCounter ::
-       [((Word32, String, Counter), [(String, Int)])]
+       Int
+    -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 String
     -> (String, Counter)
     -> IO ()
-printWindowCounter statsRaw tidMap (w, ctr) = do
+printWindowCounter maxLines statsRaw tidMap (w, ctr) = do
     if w == "default"
         then
             putStrLn $ "Global thread wise stats for [" ++ show ctr ++ "]"
@@ -215,8 +216,7 @@ printWindowCounter statsRaw tidMap (w, ctr) = do
         statsString = map (\(k, v) -> (k, map toString v)) statsOrdered
         allRows = map addTid statsString
         cnt = length allRows
-        maxLines = 10
-    printTable (header : take maxLines allRows)
+    printTable (colHeaders : take maxLines allRows)
     if cnt > maxLines
     then putStrLn $ "..." ++ show (cnt - maxLines) ++ " lines omitted ..."
     else return ()
@@ -234,7 +234,7 @@ printWindowCounter statsRaw tidMap (w, ctr) = do
         , "maximum"
         , "stddev"
         ]
-    header =
+    colHeaders =
         ["tid"
         , "label"
         ] ++ statNames
@@ -272,13 +272,14 @@ windowLevelCounters =
 -- real time. We will need a Map of windows, which will store a Map of tids
 -- which will store a list or Map of counters.
 printAllCounters ::
-       Bool
+       Int
+    -> Bool
     -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 String
     -> [Counter]
     -> String
     -> IO ()
-printAllCounters concurrent statsRaw tidMap ctrs w = do
+printAllCounters maxLines concurrent statsRaw tidMap ctrs w = do
     let
         windowTotals :: [((Word32, Counter), Int)]
         windowTotals = fmap toTotal $ filter selectWindow statsRaw
@@ -352,8 +353,7 @@ printAllCounters concurrent statsRaw tidMap ctrs w = do
                         putStrLn $ "RtsCPUTime:" ++ toString rtsCPUTime
 
         let cnt = length allRows
-            maxLines = 10
-        printTable ((header : take maxLines allRows) ++ [separator, summary])
+        printTable ((colHeaders : take maxLines allRows) ++ [separator, summary])
         if cnt > maxLines
         then putStrLn $ "..." ++ show (cnt - maxLines) ++ " lines omitted ..."
         else return ()
@@ -383,7 +383,7 @@ printAllCounters concurrent statsRaw tidMap ctrs w = do
                         ++ " in window " ++ w
 
     toString = Text.unpack . prettyI (Just ',')
-    header =
+    colHeaders =
         ["tid"
         , "label"
         , "samples"
@@ -420,15 +420,60 @@ flattenStats statsRaw = do
 
     return statsFiltered
 
+-------------------------------------------------------------------------------
+-- CLI
+-------------------------------------------------------------------------------
+
+data Config = Config
+    { configFile :: FilePath
+    , configFlattenWindows :: Bool
+    , configMaxLines :: Int
+    }
+
+configParser :: Parser Config
+configParser = Config
+    <$> argument str
+            (  metavar "EVENTLOG-FILE"
+            <> help "Path to the GHC eventlog file to analyse"
+            )
+    <*> switch
+            (  long "flatten-windows"
+            <> short 'f'
+            <> help "Collapse window-level stats across threads"
+            )
+    <*> option auto
+            (  long "max-lines"
+            <> short 'n'
+            <> metavar "N"
+            <> value 10
+            <> showDefault
+            <> help "Maximum number of thread rows to print per table"
+            )
+
+optsInfo :: ParserInfo Config
+optsInfo = info (configParser <**> helper)
+    (  fullDesc
+    <> progDesc "Analyse CPU cost, heap allocations, and Linux perf event \
+                \counters for Haskell threads and user-defined code windows."
+    <> header "hperf - Haskell performance analysis tool"
+    )
+
+-------------------------------------------------------------------------------
+-- Entry point
+-------------------------------------------------------------------------------
+
 -- XXX Are the events for a particular thread guaranteed to come in order. What
 -- if a thread logged events to a particular capability buffer and then got
 -- scheduled on another capability before its eventlog could be flushed from
 -- the previous capability?
 main :: IO ()
 main = do
-    let flattenWindows = False
-    (path:[]) <- getArgs
+    Config { configFile = path
+           , configFlattenWindows = flattenWindows
+           , configMaxLines = maxLines
+           } <- execParser optsInfo
     let stream = File.readChunks (Path.fromString_ path)
+
     (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
     -- putStrLn $ show kv
     events <- parseDataHeader rest
@@ -479,7 +524,7 @@ main = do
 
     let f w =
             printAllCounters
-                flattenWindows (getStats w) (fmap fromJust tidMap) ctrs w
+                maxLines flattenWindows (getStats w) (fmap fromJust tidMap) ctrs w
      in mapM_ f wins
 
     putStrLn "--------------------------------------------------"
@@ -488,7 +533,7 @@ main = do
     putStrLn ""
 
     -- For each (window, counter) list all threads
-    let f (w,c) = printWindowCounter (getStats w) (fmap fromJust tidMap) (w,c)
+    let f (w,c) = printWindowCounter maxLines (getStats w) (fmap fromJust tidMap) (w,c)
      in mapM_ f windowCounterList
 
     where

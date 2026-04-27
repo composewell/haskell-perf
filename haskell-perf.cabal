@@ -116,6 +116,7 @@ executable hperf
   build-depends:
        base >= 4.9 && < 5
      , containers
+     , optparse-applicative
      , streamly-core >= 0.3.0 && < 0.4
      , streamly-statistics
      , format-numbers
