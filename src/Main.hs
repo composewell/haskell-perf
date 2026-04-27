@@ -131,7 +131,7 @@ toStats ::
         ((Word32, String, Counter), (Location, Int64))
         -- Map (tid, window tag, counter) (Maybe [(stat name, value)])
         (Map (Word32, String, Counter) (Maybe [(String, Int)]))
-toStats = Fold.demuxKvToMap (\k -> pure (f1 k))
+toStats = Fold.demuxKvToMap (\k -> pure (Just (f1 k)))
 
     where
 
