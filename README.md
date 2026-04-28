@@ -51,7 +51,7 @@ With these tools you can find:
 
 For more details on each of the performance analysis methods see the following
 documents:
-* GHC RTS Stats
-* threadCPUTime# RTS primitive
-* GHC Event logging
-* GHC patches details
+* [GHC RTS Stats](docs/ghc-rts-performance-analysis.md)
+* [threadCPUTime# RTS primitive](docs/thread-cputime-primop.md)
+* [GHC Event logging](docs/eventlog-performance-analysis.md)
+* [GHC patches details](dev/ghc-work.md)

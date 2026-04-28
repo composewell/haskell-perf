@@ -1,3 +1,27 @@
+<!--
+# GHC RTS Stats
+
+RTS Stats give entire OS process level (not OS thread level) cpu time
+and not Haskell thread cpu time. When multiple OS threads are used, the
+cpu time recorded is the cpu time of all the threads combined. Also, the
+way kernel accounts this time it could be off by a little (microseconds)
+because each thread's cpu time is recorded at the last accounting
+event. Allocations are recorded by the GHC RTS only at the GC boundary,
+so the allocations reported are from the point when the last GC
+happened. So we need to be careful when using or interpreting these
+stats.
+
+If we built the program without -threaded and we are using a single
+Haskell thread then we can get cpu time between any two points in the
+program accurately. Accurate accounting of allocations will require a GC
+to be forced which is not usually practical.
+
+In a multithreaded program using RTS stats we can only tell time how
+much total CPU time (and allocations) the entire Haskell process (all
+threads) spent between two points, but we cannot tell which Haskell
+thread spent how much time.
+-->
+
 # Components of a Haskell Process
 
 * An OS level process

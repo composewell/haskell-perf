@@ -1,6 +1,22 @@
-# haskell-perf
+# GHC Event logging
 
+Available in GHC 9.2.8 RTS patch. Can be ported to later GHCs.
+
+<!--
 GHC Patch: https://github.com/composewell/ghc/tree/ghc-8.10.7-eventlog-enhancements
+-->
+
+Eventlog based Haskell thread aware time and allocation analysis is
+possible with stock GHC but there are some limitations and drawbacks
+which are fixed in the RTS patch described below. The patch adds
+accurate timing and allocation information and hardware performance
+counters, and we then use a custom event log analysis program to provide
+an accurate and comprehensive analysis of all the threads in the entire
+program not just the current thread.
+
+<!--
+TBD: document the exact limitations and differences.
+-->
 
 ## Enable Linux perf counters
 
