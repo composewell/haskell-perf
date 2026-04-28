@@ -15,23 +15,17 @@ import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TBQueue
     (TBQueue, newTBQueue, readTBQueue, writeTBQueue)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Data.Bifunctor (second)
 import Data.Function ((&))
-import Data.Maybe (fromJust, isJust)
 import Streamly.Data.Stream (Stream)
 import Streamly.Internal.Data.Time.Clock (getTime, Clock (Monotonic))
 import Streamly.Internal.Data.Time.Units (AbsTime)
+import Streamly.Metrics.Channel.Common (aggregateListBy, printKV)
 import Streamly.Metrics.Perf.Type (PerfMetrics(..))
 import Streamly.Metrics.Perf (benchWith)
-import Streamly.Metrics.Type (showList, Indexable)
+import Streamly.Metrics.Type (Indexable)
 import Streamly.Data.Stream.Prelude (MonadAsync)
 
-import qualified Streamly.Data.Fold as Fold
-import qualified Streamly.Internal.Data.Fold as Fold
 import qualified Streamly.Data.Stream as Stream
-import qualified Streamly.Internal.Data.Stream.Prelude as Stream
-
-import Prelude hiding (showList)
 
 -------------------------------------------------------------------------------
 -- Event processing
@@ -60,30 +54,6 @@ send (Channel chan) desc metrics = do
 fromChan :: MonadAsync m => TBQueue a -> Stream m a
 fromChan = Stream.repeatM . (liftIO . atomically . readTBQueue)
 
-aggregateListBy :: (MonadAsync m, Ord k, Fractional a) =>
-    Double -> Int -> Stream m (AbsTime, (k, [a])) -> Stream m (k, [a])
-aggregateListBy timeout batchsize stream =
-    fmap (second fromJust)
-        $ Stream.filter (isJust . snd)
-        $ Stream.classifySessionsBy
-            0.1 False (return . (> 1000)) timeout f stream
-
-    where
-
-    scale Nothing _ = Nothing
-    scale (Just xs) count = Just $ map (/ count) xs
-
-    f =
-        Fold.teeWithFst
-            scale
-            (Fold.take batchsize (Fold.foldl1' (zipWith (+))))
-            (Fold.lmap (const 1) Fold.sum)
-
-printKV :: (MonadIO m, Show k, Show a, Indexable a) => Stream m (k, [a]) -> m b
-printKV stream =
-    let f (k, xs) = liftIO $ putStrLn $ show k ++ ":\n" ++ showList xs
-     in Stream.fold (Fold.drainMapM f) stream >> error "printChannel: Metrics channel closed"
-
 -- XXX Print actual batch size and also scale the results per event.
 
 -- | Forever print the metrics on a channel to the console periodically after
@@ -95,6 +65,13 @@ printChannel (Channel chan) timeout batchSize =
     & aggregateListBy timeout batchSize
     & printKV
 
+-- | Start an async thread to print the stats received on the supplied channel
+-- and print the stats on console.
+--
+-- Usage: @forkChannelPrinter channel timeout batch-size@.
+--
+-- Stats are printed when either as many stat samples as the batch size have
+-- been received or we have not received a stat in "timeout" seconds.
 forkChannelPrinter :: (MonadAsync m, Show a, Fractional a, Indexable a) =>
     Channel a -> Double -> Int -> m ThreadId
 forkChannelPrinter chan timeout = liftIO . forkIO . printChannel chan timeout
