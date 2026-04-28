@@ -1,28 +1,32 @@
-<!--
 # GHC RTS Stats
 
-RTS Stats give entire OS process level (not OS thread level) cpu time
-and not Haskell thread cpu time. When multiple OS threads are used, the
-cpu time recorded is the cpu time of all the threads combined. Also, the
-way kernel accounts this time it could be off by a little (microseconds)
-because each thread's cpu time is recorded at the last accounting
-event. Allocations are recorded by the GHC RTS only at the GC boundary,
-so the allocations reported are from the point when the last GC
-happened. So we need to be careful when using or interpreting these
-stats.
+GHC RTS has a builtin stats reporting mechanism which can be accessed
+using `+RTS -s` flag to print the stats when the program has terminated
+or if compiled with `-T` flag then we can access it programmatically via
+the `getRTSStats` API. It reports the CPU time used by the program and
+allocations among other things.
 
-If we built the program without -threaded and we are using a single
-Haskell thread then we can get cpu time between any two points in the
-program accurately. Accurate accounting of allocations will require a GC
-to be forced which is not usually practical.
+RTS Stats give entire OS process level (not OS thread level) cpu time
+and not Haskell thread-wise cpu time. When multiple OS threads are
+used, the cpu time reported is the cpu time of all the Haskell threads
+combined, and all the OS threads combined.
+
+<!--
+Also, the way kernel accounts this time it could be off by a little
+(microseconds) because each thread's cpu time is recorded at the last
+kernel accounting event. Allocations are recorded by the GHC RTS only at
+the GC boundary, so the allocations reported are from the point when the
+last GC happened. So we need to be careful when using or interpreting
+these stats.
+-->
 
 In a multithreaded program using RTS stats we can only tell time how
 much total CPU time (and allocations) the entire Haskell process (all
 threads) spent between two points, but we cannot tell which Haskell
-thread spent how much time.
--->
+thread spent how much time or how much time was actually spent by the
+instructions between those two points.
 
-# Components of a Haskell Process
+## Components of a Haskell Process
 
 * An OS level process
 * Multiple OS level threads in the OS process
@@ -30,19 +34,18 @@ thread spent how much time.
   threads can run on any of the available OS threads every time it is ready to
   run.
 
-# A prototypical program
+## A prototypical program
 
-A simple yet comprehensive program to understand different components of
+[This example](examples/console-loop-multi-thread.hs) is a
+a simple yet comprehensive program to understand different components of
 performance analysis and stats. You can play with this to understand how things
 work, how the stats add up and what they mean.
 
-See examples/console-loop-multi-thread.hs .
+## How many OS threads do we have?
 
-# How many OS threads do we have?
-
-To see how may OS threads a haskell process is using on Linux.
-Run examples/console-loop-multi-thread.hs , note its pid printed in the output.
-All of its OS threads are:
+To see how many OS threads a Haskell process is using on Linux.  Run
+[this example](examples/console-loop-multi-thread.hs), note its pid
+printed in the output.  All of its OS threads can be printed by:
 ```
 ls /proc/<PID>/task
 ```
@@ -62,7 +65,7 @@ specified with the -N rts option.
 Usually we see 3 threads plus 2 threads per capability when compiled
 with `-threaded` option.
 
-# GHC RTS stats
+## GHC RTS stats
 
 The getRTSStats call gives us the CPU time (essentially get_clocktime
 or getrusage under the hood to get the CPU time) of the process and
@@ -72,7 +75,7 @@ getRTSStats at point B and diff them?
 There are two problems with this. (1) the allocation count is recorded
 from the last GC which does not correspond to point A or point B unless
 we force a GC at both the points which is not practical and is going to
-change the performance characterstics of the program drastically. (2)
+change the performance characteristics of the program drastically. (2)
 the CPU time that we get is for the entire process which includes all
 the OS threads, if the program is built with `-threaded` option then
 this is always going to be inaccurate; even if we get OS thread level
@@ -91,17 +94,10 @@ This is used in this way in micro-benchmarking programs but it is very
 restrictive and useless in practice.
 
 For small programs though the `+RTS -s` options is very useful to assess the
-performance characterstics. I often take out the small piece that I want to
+performance characteristics. I often take out the small piece that I want to
 measure and run it with `+RTS -s`.
 
-# Using it
-
-In the haskell-perf library we do have a convenient way to wrap a function
-around and use getRTSStats before and after it. If the function passes the
-criterion mentioned above then we can get a decent measurement, not very
-accurate but workable. We automatically perform a GC before and after.
-
-# Interpreting the RTS Stats
+## Interpreting the RTS Stats
 
 We divide the stats in two categories.  The first category is the non-gc
 stats, these stats are accurate up to the time of the `getRTSStats`
@@ -125,20 +121,53 @@ in this category.
 Note that the GC cpu time should be computed by adding the `gc_cpu_ns`
 and `nonmoving_gc_cpu_ns` when the non-moving gc is enabled.
 
-# Variability of Measurements
+## Variability of Measurements
 
 Performance measurement is tricky and there are many factors to take care of if
 you want to get reliable results:
 
-* cannot use wall-clock time, need to use process cpu time
-* disable CPU frequency scaling
-* Memory contention can affect the measurement, do not run other things on the
-  same machine.
-* cache effect due to context switching can affect it, do not run other things
-  on the same machine.
+* Disable CPU frequency scaling, can cause run-to-run or variability in the
+  same run.
+* Do not run other things on the same machine. interrupts, kernel
+  activity, background daemons can also affect:
+  * Memory contention can affect the measurement.
+  * cache effects due to context switching can affect it.
+* Discard first runs, first runs are usually outliers because of warm up effects,
+  instruction cache cold, data cache cold, page faults, branch predictor
+  not trained.
+* Use thread affinity. Thread migration to another CPU: causes cache
+  invalidation, different core state, timing noise.
+* Use larger measurements. In smaller one measurement overhead and
+  variance may dominate: timing calls (clock_gettime), counters, RTS
+  stats.
 * Different CPUs running at different frequencies can make the results
   unpredictable.
-* The clocks of different CPUs may not be in sync.
+* The clocks of different CPUs may not be perfectly in sync.
 
-To counter the last two factors we should use instruction count or allocation
-count rather than time as a reliable measure.
+To counter the last two factors we should use instruction count or
+allocation count rather than time as a more reliable measure. Even
+the instruction count might vary because of measurement overhead adds
+instruction count, which can vary depending on how many times the thread
+is context switched.
+
+## Haskell specific variability
+
+* Lazy evaluation, may defer work which might get evaluated later in the
+  context of some other measurement window.
+
+## Using getRTSStats with haskell-perf
+
+In the `haskell-perf` library we do have a convenient way to wrap a
+function around to use `getRTSStats` before and after it and print the
+resulting stats. If the function passes the criterion mentioned above
+then we can get a decent measurement, not very accurate but workable. We
+automatically perform a GC before and after.
+
+## Summary:
+
+* `+RTS -s` option is very useful in assessing the behavior of the entire
+  program.
+* `getRTSStats` can be used to measure the timing of a piece of code if we are
+  single threaded, the thread does not yield during the measurement, we are
+  forcing GCs for roughly correct allocation counts. GCs happening in the
+  middle of the measurement can add to the noise.
