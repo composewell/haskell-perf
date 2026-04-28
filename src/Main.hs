@@ -453,8 +453,8 @@ configParser = Config
 optsInfo :: ParserInfo Config
 optsInfo = info (configParser <**> helper)
     (  fullDesc
-    <> progDesc "Analyse CPU cost, heap allocations, and Linux perf event \
-                \counters for Haskell threads and user-defined code windows."
+    <> progDesc ("Analyse CPU cost, heap allocations, and Linux perf event "
+             ++ "counters for Haskell threads and user-defined code windows.")
     <> header "hperf - Haskell performance analysis tool"
     )
 

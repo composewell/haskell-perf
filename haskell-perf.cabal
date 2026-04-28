@@ -32,6 +32,8 @@ extra-doc-files:
 
 extra-source-files:
     examples/*.hs
+    lib/Streamly/Metrics/File.hs
+    lib/Streamly/Metrics/Console.hs
 
 source-repository head
     type: git
@@ -52,14 +54,13 @@ flag dev
 -------------------------------------------------------------------------------
 
 common default-extensions
+    -- In GHC 2024
     default-extensions:
         BangPatterns
-        CApiFFI
         ConstraintKinds
         DeriveDataTypeable
         DeriveGeneric
         DeriveTraversable
-        DoAndIfThenElse
         ExistentialQuantification
         FlexibleContexts
         FlexibleInstances
@@ -67,24 +68,20 @@ common default-extensions
         InstanceSigs
         KindSignatures
         LambdaCase
-        MagicHash
         MultiParamTypeClasses
-        PatternSynonyms
         RankNTypes
-        RecordWildCards
         ScopedTypeVariables
         TupleSections
         TypeApplications
-        TypeFamilies
-        ViewPatterns
+        TypeOperators
 
-        -- MonoLocalBinds, enabled by TypeFamilies, causes performance
-        -- regressions. Disable it. This must come after TypeFamilies,
-        -- otherwise TypeFamilies will enable it again.
-        NoMonoLocalBinds
-
-        -- UndecidableInstances -- Does not show any perf impact
-        -- UnboxedTuples        -- interferes with (#.)
+    -- Not in GHC2024
+    default-extensions:
+        CPP
+        CApiFFI
+        MagicHash
+        PatternSynonyms
+        RecordWildCards
 
 common compile-options
     import: default-extensions
@@ -96,6 +93,7 @@ common compile-options
                     -Wno-missing-exported-signatures
                     -Wno-missing-import-lists
                     -Wno-missing-local-signatures
+                    -Wno-missing-role-annotations
                     -Wno-missing-safe-haskell-mode
                     -Wno-missed-specialisations
                     -Wno-all-missed-specialisations
@@ -113,6 +111,71 @@ common compile-options
                     -Wall-missed-specialisations
                     -fno-ignore-asserts
 
+common optimization-options
+    ghc-options: -O2
+                 -fdicts-strict
+                 -fspec-constr-recursive=16
+                 -fmax-worker-args=16
+
+common lib-options
+  import: compile-options, optimization-options
+
+common test-options
+  import: compile-options, optimization-options
+  ghc-options: -with-rtsopts -T
+
+-------------------------------------------------------------------------------
+-- Library
+-------------------------------------------------------------------------------
+
+library
+    import: lib-options
+
+    hs-source-dirs: lib
+    exposed-modules:
+       Streamly.KeyValue.Type
+     , Streamly.Metrics.Type
+     , Streamly.Metrics.Perf
+     , Streamly.Metrics.Perf.Type
+     , Streamly.Metrics.Perf.RUsage
+     , Streamly.Metrics.Channel
+     , Streamly.Metrics.Channel.Unbounded
+     , Streamly.Metrics.Channel.Common
+     , Streamly.Metrics.Measure
+     -- , Streamly.Metrics.File
+     -- , Streamly.Metrics.Console
+
+    build-depends:
+       base >= 4.9 && < 5
+     , pretty-show >= 1.10 && < 1.11
+     , stm >= 2.5.3 && < 2.6
+     , streamly >= 0.11.0 && < 0.12
+     , streamly-core >= 0.3.0 && < 0.4
+
+-------------------------------------------------------------------------------
+-- Executables
+-------------------------------------------------------------------------------
+
+executable hperf
+  import: compile-options, optimization-options
+  hs-source-dirs: src
+  main-is: Main.hs
+  other-modules: Aggregator, EventParser
+  build-depends:
+       base >= 4.9 && < 5
+     , containers < 0.9
+     , format-numbers < 0.2
+     , optparse-applicative < 0.20
+     , streamly-core >= 0.3.0 && < 0.4
+     , streamly-statistics < 0.3
+     , text < 2.2
+
+-------------------------------------------------------------------------------
+-- Examples
+-------------------------------------------------------------------------------
+
+-- XXX Use examples flag to compile these
+
 executable console-loop-multi-thread
   import: compile-options
   hs-source-dirs: examples
@@ -124,17 +187,17 @@ executable console-loop-multi-thread
   if os(windows)
     buildable: False
 
-executable hperf
-  import: compile-options
-  hs-source-dirs: src
+-------------------------------------------------------------------------------
+-- Tests
+-------------------------------------------------------------------------------
+
+test-suite basic
+  import: test-options
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
   main-is: Main.hs
-  other-modules: Aggregator, EventParser
   ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
   build-depends:
-       base >= 4.9 && < 5
-     , containers < 0.9
-     , optparse-applicative < 0.20
-     , streamly-core >= 0.3.0 && < 0.4
-     , streamly-statistics < 0.3
-     , format-numbers < 0.2
-     , text < 2.2
+       base
+     , haskell-perf
+     , streamly-core
