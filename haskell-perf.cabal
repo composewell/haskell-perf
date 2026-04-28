@@ -23,9 +23,12 @@ build-type:          Simple
 extra-doc-files:
     Changelog.md
     README.md
-    dev/*.md
+    dev/GhcFlags.md dev/Methods.md dev/README.md dev/ghc-work.md
     docs/*.md
-    docs/threadCPUTime.hs
+    examples/README.md
+
+extra-source-files:
+    examples/*.hs
 
 source-repository head
     type: git
@@ -36,10 +39,10 @@ flag dev
   manual: True
   default: False
 
-flag fusion-plugin
-  description: Use fusion plugin for benchmarks and executables
-  manual: True
-  default: False
+-- flag fusion-plugin
+--   description: Use fusion plugin for benchmarks and executables
+--   manual: True
+--   default: False
 
 -------------------------------------------------------------------------------
 -- Common stanzas
@@ -114,7 +117,9 @@ executable console-loop-multi-thread
   main-is: console-loop-multi-thread.hs
   build-depends:
        base >= 4.9 && < 5
-     , unix
+     , unix < 2.9
+  if os(windows)
+    buildable: False
 
 executable hperf
   import: compile-options
@@ -124,9 +129,9 @@ executable hperf
   ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
   build-depends:
        base >= 4.9 && < 5
-     , containers
-     , optparse-applicative
+     , containers < 0.9
+     , optparse-applicative < 0.20
      , streamly-core >= 0.3.0 && < 0.4
-     , streamly-statistics
-     , format-numbers
-     , text
+     , streamly-statistics < 0.3
+     , format-numbers < 0.2
+     , text < 2.2
