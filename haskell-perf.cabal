@@ -23,7 +23,10 @@ build-type:          Simple
 extra-doc-files:
     Changelog.md
     README.md
-    dev/GhcFlags.md dev/Methods.md dev/README.md dev/ghc-work.md
+    dev/GhcFlags.md
+    dev/Methods.md
+    dev/metrics.md
+    dev/ghc-work.md
     docs/*.md
     examples/README.md
 
