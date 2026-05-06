@@ -187,17 +187,17 @@ executable console-loop-multi-thread
   if os(windows)
     buildable: False
 
--------------------------------------------------------------------------------
--- Tests
--------------------------------------------------------------------------------
-
-test-suite basic
+executable with-stats
   import: test-options
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is: Main.hs
+  hs-source-dirs: examples
+  main-is: withStats.hs
   ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
   build-depends:
        base
      , haskell-perf
      , streamly-core
+
+-------------------------------------------------------------------------------
+-- Tests
+-------------------------------------------------------------------------------
+
