@@ -5,7 +5,7 @@ console-loop.hs -- console echo loop
 delay-loop.hs -- threadDelay in a loop
 ffi.hs -- fork one thread + FFI c_sleep
 
-# In memory collection
+# In-memory collection
 
 threadCPUTime.hs -- single threaded stat collection
 
