@@ -486,6 +486,20 @@ optsInfo = info (configParser <**> helper)
 -- Report
 -------------------------------------------------------------------------------
 
+postProcess ::
+    -- ((tid, window-tag, counter), [(stat-name, value)])
+    -- XXX Instead of Maybe here can we use an empty list?
+       [ ((Word32, String, Counter), Maybe [(String, Int)]) ]
+    -> [ ((Word32, String, Counter), [(String, Int)]) ]
+postProcess =
+    -- TODO: get the sorting field from Config/CLI
+      -- List.sortOn (getStatField "tid")
+    -- TODO: get the threshold from Config/CLI
+    --  $ filter (\x -> fromJust (getStatField "total" x) > 0)
+      fmap (\(k, v) -> (k, filter (\(k1,_) -> k1 /= "latest") v))
+    . fmap (\(k, v) -> (k, fromJust v))
+    . filter (\(_, v) -> isJust v)
+
 loadStats ::
        FilePath
     -> IO
@@ -510,36 +524,41 @@ loadStats path = do
         Left ((tid, tag, ctr), (loc, fromIntegral val))
     tagEither (LabelEvent tid label) = Right (tid, label)
 
-getAllStats ::
+getStatMapTidMap ::
        FilePath
-    -> Bool
     -> IO
         ( [((Word32, String, Counter), [(String, Int)])]
-        , [((Word32, String, Counter), [(String, Int)])]
         , Map Word32 (Maybe String)
         )
-getAllStats path mergeThreads = do
+getStatMapTidMap path = do
     (statsMap, tidMap) <- loadStats path
     -- statsMap :: Map (tid, window tag, counter) (Maybe [(stat name, value)])
     -- putStrLn $ ppShow r
     -- putStrLn $ show tidMap
-    let
-        -- rawStats :: [(tid, window tag, counter), [(stat name, value)]]
-        rawStats =
-            -- TODO: get the sorting field from Config/CLI
-              -- List.sortOn (getStatField "tid")
-            -- TODO: get the threshold from Config/CLI
-            --  $ filter (\x -> fromJust (getStatField "total" x) > 0)
-              map (\(k, v) -> (k, filter (\(k1,_) -> k1 /= "latest") v))
-            $ map (\(k, v) -> (k, fromJust v))
-            $ filter (\(_, v) -> isJust v)
-            $ Map.toList statsMap
+    -- rawStats :: [(tid, window tag, counter), [(stat name, value)]]
+    let statsMap1 = postProcess $ Map.toList statsMap
+    return (statsMap1, tidMap)
 
+getAllStats ::
+    Bool
+    -> FilePath
+    -> IO
+        ( [((Word32, String, Counter), [(String, Int)])]
+        , Map Word32 (Maybe String)
+        , [((Word32, String, Counter), [(String, Int)])]
+        , [(String, Counter)])
+getAllStats mergeThreads path = do
+    (statMap, tidMap) <- getStatMapTidMap path
     -- XXX Take a window argument from config/CLI and rename only specific
     -- windows or all windows depending on that.
+    -- XXX we should rather use the mergeThreads flag whereever we need this.
+    -- this makes understanding code difficult.
     foldedStats <-
-        (if mergeThreads then foldWindowThreads else return) rawStats
-    return (rawStats, foldedStats, tidMap)
+        if mergeThreads
+        then foldWindowThreads statMap
+        else return statMap
+    let windowCounterList = getWindowCounterList foldedStats
+    return (statMap, tidMap, foldedStats, windowCounterList)
 
 getWindowCounterList ::
     [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
@@ -611,7 +630,7 @@ showOneCounterPerWindow maxLines rawStats foldedStats tidMap windowCounterList =
 main :: IO ()
 main = do
     Config { configFile = path
-           , configFlattenWindows = flattenWindows
+           , configFlattenWindows = mergeThreads
            , configMaxLines = maxLines
            , configDetailed = detailed
            , configListCounters = listCounters
@@ -623,19 +642,17 @@ main = do
         mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
 
     when listWindows $ do
-        (_, statsFlattened, _) <- getAllStats path flattenWindows
-        let wins = List.nub $ "default" : fmap fst (getWindowCounterList statsFlattened)
+        (_, _, _, windowCounterList) <- getAllStats mergeThreads path
+        let wins = List.nub $ "default" : fmap fst windowCounterList
         putStrLn "Available windows:"
         mapM_ (putStrLn . ("  " ++)) wins
 
     when (not listCounters && not listWindows) $ do
-        -- XXX flattened stats are needed only in detailed view
-        (statsRaw, statsFlattened, tidMap) <- getAllStats path flattenWindows
-        let windowCounterList = getWindowCounterList statsFlattened
+        (statsMap, tidMap, foldedStats, windowCounterList) <- getAllStats mergeThreads path
         validateLabels tidMap
         if detailed
         then showOneCounterPerWindow
-                maxLines statsRaw statsFlattened tidMap windowCounterList
+                maxLines statsMap foldedStats tidMap windowCounterList
         else showAllCountersPerWindow
                 maxLines
-                flattenWindows statsRaw statsFlattened tidMap windowCounterList
+                mergeThreads statsMap foldedStats tidMap windowCounterList
