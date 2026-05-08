@@ -14,7 +14,9 @@ import GHC.Stats (getRTSStats, getRTSStatsEnabled, RTSStats(..))
 import Streamly.Internal.Data.Time.Units (NanoSecond64, fromAbsTime)
 import Streamly.Metrics.Measure (measureWith)
 import Streamly.Metrics.Perf.Type (PerfMetrics(..), checkMonotony)
+#if !defined(mingw32_HOST_OS)
 import Streamly.Metrics.Perf.RUsage (getRuMetrics, pattern RUsageSelf)
+#endif
 import Text.Show.Pretty (ppShow)
 
 import qualified Streamly.Internal.Data.Time.Clock as Clock
@@ -65,8 +67,12 @@ getPerfMetrics :: IO [PerfMetrics]
 getPerfMetrics = do
     procMetrics <- getProcMetrics
     gcMetrics <- getGcMetrics
+#if !defined(mingw32_HOST_OS)
     ruMetrics <- getRuMetrics RUsageSelf
     return $ concat [procMetrics, gcMetrics, ruMetrics]
+#else
+    return $ concat [procMetrics, gcMetrics]
+#endif
 
 {-# INLINE preRun #-}
 preRun :: IO [PerfMetrics]

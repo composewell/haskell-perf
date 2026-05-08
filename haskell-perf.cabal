@@ -137,13 +137,16 @@ library
      , Streamly.Metrics.Type
      , Streamly.Metrics.Perf
      , Streamly.Metrics.Perf.Type
-     , Streamly.Metrics.Perf.RUsage
      , Streamly.Metrics.Channel
      , Streamly.Metrics.Channel.Unbounded
      , Streamly.Metrics.Channel.Common
      , Streamly.Metrics.Measure
      -- , Streamly.Metrics.File
      -- , Streamly.Metrics.Console
+
+    if !os(windows)
+      exposed-modules:
+        Streamly.Metrics.Perf.RUsage
 
     build-depends:
        base >= 4.9 && < 5
