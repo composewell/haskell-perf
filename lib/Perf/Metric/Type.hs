@@ -1,6 +1,6 @@
 {-# LANGUAGE DerivingVia #-}
 -- |
--- Module      : Streamly.Metrics.Type
+-- Module      : Perf.Metric.Type
 -- Copyright   : (c) 2021 Composewell Technologies
 -- License     : Apache-2.0
 -- Maintainer  : streamly@composewell.com
@@ -12,7 +12,7 @@
 -- respect to time e.g. 'Sequence' or 'Time'.  Metrics may have different
 -- semantics e.g. 'Counter' or 'Gauge'.
 --
-module Streamly.Metrics.Type
+module Perf.Metric.Type
     (
     -- * Semantics
     -- | A counter counts how many events of a type have occurred whereas a

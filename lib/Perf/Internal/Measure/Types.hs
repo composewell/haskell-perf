@@ -1,4 +1,4 @@
-module Streamly.Metrics.Perf.Type
+module Perf.Internal.Measure.Types
     (
       PerfMetrics (..)
     , checkMonotony
@@ -6,7 +6,7 @@ module Streamly.Metrics.Perf.Type
 where
 
 import Data.Word (Word64)
-import Streamly.Metrics.Type
+import Perf.Metric.Type
     (GaugeMax(..), Seconds(..), Bytes(..), Indexable(..))
 
 -- Use Counter/Gauge as the outer constructor and Bytes/Seconds as the inner

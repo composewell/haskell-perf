@@ -1,4 +1,4 @@
-module Streamly.Metrics.Measure
+module Perf.Internal.Measure.Bracket
     (
       measureWith
     , measure

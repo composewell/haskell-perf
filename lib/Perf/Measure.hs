@@ -1,4 +1,4 @@
-module Streamly.Metrics.Perf
+module Perf.Measure
     (
       PerfMetrics(..)
     , benchWith
@@ -12,10 +12,10 @@ import Control.Monad (unless)
 import Data.Maybe (catMaybes)
 import GHC.Stats (getRTSStats, getRTSStatsEnabled, RTSStats(..))
 import Streamly.Internal.Data.Time.Units (NanoSecond64, fromAbsTime)
-import Streamly.Metrics.Measure (measureWith)
-import Streamly.Metrics.Perf.Type (PerfMetrics(..), checkMonotony)
+import Perf.Internal.Measure.Bracket (measureWith)
+import Perf.Internal.Measure.Types (PerfMetrics(..), checkMonotony)
 #if !defined(mingw32_HOST_OS)
-import Streamly.Metrics.Perf.RUsage (getRuMetrics, pattern RUsageSelf)
+import Perf.Internal.Measure.RUsage (getRuMetrics, pattern RUsageSelf)
 #endif
 import Text.Show.Pretty (ppShow)
 

@@ -1,4 +1,4 @@
-module Streamly.Metrics.Channel.Common
+module Perf.Internal.Sink
     (
       aggregateListBy
     , printKV
@@ -9,7 +9,7 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Bifunctor (second)
 import Data.Maybe (fromJust, isJust)
 import Streamly.Internal.Data.Time.Units (AbsTime)
-import Streamly.Metrics.Type (showList, Indexable)
+import Perf.Metric.Type (showList, Indexable)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.Stream.Prelude (MonadAsync)
 

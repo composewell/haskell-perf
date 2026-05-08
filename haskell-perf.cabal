@@ -134,22 +134,20 @@ library
 
     hs-source-dirs: lib
     exposed-modules:
-       Streamly.KeyValue.Type
-     , Streamly.Metrics.Type
-     , Streamly.Metrics.Perf
-     , Streamly.Metrics.Perf.Type
-     , Streamly.Metrics.Channel
-     , Streamly.Metrics.Channel.Unbounded
-     , Streamly.Metrics.Channel.Common
-     , Streamly.Metrics.Measure
-     -- , Streamly.Metrics.File
-     -- , Streamly.Metrics.Console
+       Perf.Metric.KeyValue
+     , Perf.Metric.Type
+     , Perf.Measure
+     , Perf.Internal.Measure.Types
+     , Perf.Internal.Measure.Bracket
+     , Perf.Sink.Console
+     , Perf.Sink.Console.Unbounded
+     , Perf.Internal.Sink
      , Perf.Eventlog.Parser
      , Perf.Eventlog.Aggregate
 
     if !os(windows)
       exposed-modules:
-        Streamly.Metrics.Perf.RUsage
+        Perf.Internal.Measure.RUsage
 
     build-depends:
        base >= 4.9 && < 5

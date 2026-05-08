@@ -1,12 +1,12 @@
 -- |
--- Module      : Streamly.KeyValue.Type
+-- Module      : Perf.Metric.KeyValue
 -- Copyright   : (c) 2021 Composewell Technologies
 -- License     : Apache-2.0
 -- Maintainer  : streamly@composewell.com
 -- Stability   : experimental
 -- Portability : GHC
 --
-module Streamly.KeyValue.Type
+module Perf.Metric.KeyValue
     (
     -- * KeyValue
       KeyValue (..)

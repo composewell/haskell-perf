@@ -1,4 +1,4 @@
-module Streamly.Metrics.Perf.RUsage
+module Perf.Internal.Measure.RUsage
     (
       pattern RUsageSelf
     , pattern RUsageChildren
@@ -16,8 +16,8 @@ import Foreign.C.Types (CInt(..), CLong)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr (Ptr)
 import Foreign.Storable (Storable(..))
-import Streamly.Metrics.Perf.Type (PerfMetrics(..))
-import Streamly.Metrics.Type (GaugeMax(..), Seconds(..), Bytes(..))
+import Perf.Internal.Measure.Types (PerfMetrics(..))
+import Perf.Metric.Type (GaugeMax(..), Seconds(..), Bytes(..))
 
 #include <sys/time.h>
 #include <sys/resource.h>

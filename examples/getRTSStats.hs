@@ -1,8 +1,8 @@
 import Control.Concurrent(threadDelay)
-import Streamly.Metrics.Channel
+import Perf.Sink.Console
     (Channel, newChannel, forkChannelPrinter, benchOnWith)
--- import Streamly.Metrics.Channel (printChannel)
-import Streamly.Metrics.Perf.Type (PerfMetrics)
+-- import Perf.Sink.Console (printChannel)
+import Perf.Internal.Measure.Types (PerfMetrics)
 
 import qualified Streamly.Data.Fold as Fold
 import qualified Streamly.Data.Stream as Stream

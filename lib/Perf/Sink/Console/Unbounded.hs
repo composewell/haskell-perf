@@ -1,4 +1,4 @@
-module Streamly.Metrics.Channel.Unbounded
+module Perf.Sink.Console.Unbounded
     (
       Channel
     , newChannel
@@ -16,16 +16,16 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Function ((&))
 import Streamly.Internal.Data.Time.Clock (getTime, Clock (Monotonic))
 import Streamly.Internal.Data.Time.Units (AbsTime)
-import Streamly.Metrics.Perf.Type (PerfMetrics(..))
-import Streamly.Metrics.Perf (benchWith)
-import Streamly.Metrics.Type (Indexable)
+import Perf.Internal.Measure.Types (PerfMetrics(..))
+import Perf.Measure (benchWith)
+import Perf.Metric.Type (Indexable)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.Stream.Prelude (MonadAsync)
 
 import qualified Streamly.Data.Stream as Stream
 
 import Prelude hiding (showList)
-import Streamly.Metrics.Channel.Common
+import Perf.Internal.Sink
 
 -------------------------------------------------------------------------------
 -- Event processing
