@@ -144,8 +144,8 @@ library
      , Streamly.Metrics.Measure
      -- , Streamly.Metrics.File
      -- , Streamly.Metrics.Console
-     , Eventlog.EventParser
-     , Eventlog.Aggregator
+     , Perf.Eventlog.Parser
+     , Perf.Eventlog.Aggregate
 
     if !os(windows)
       exposed-modules:

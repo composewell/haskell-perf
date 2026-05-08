@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Eventlog.EventParser
+module Perf.Eventlog.Parser
     (
       parseLogHeader
     , parseDataHeader
