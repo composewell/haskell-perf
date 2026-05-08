@@ -433,6 +433,8 @@ data Config = Config
     , configFlattenWindows :: Bool
     , configMaxLines :: Int
     , configDetailed :: Bool
+    , configListCounters :: Bool
+    , configListWindows :: Bool
     }
 
 configParser :: Parser Config
@@ -460,6 +462,16 @@ configParser = Config
             (  long "detailed"
             <> short 'd'
             <> help "Print details for each counter for each window"
+            )
+    <*> switch
+            (  long "list-counters"
+            <> short 'c'
+            <> help "List all available counters and exit"
+            )
+    <*> switch
+            (  long "list-windows"
+            <> short 'w'
+            <> help "List all windows found in the eventlog file and exit"
             )
 
 optsInfo :: ParserInfo Config
@@ -592,16 +604,27 @@ main = do
            , configFlattenWindows = flattenWindows
            , configMaxLines = maxLines
            , configDetailed = detailed
+           , configListCounters = listCounters
+           , configListWindows = listWindows
            } <- execParser optsInfo
 
-    (statsRaw, statsFlattened, tidMap) <- loadStats path flattenWindows
+    when listCounters $ do
+        putStrLn "Supported counters:"
+        mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
 
-    let windowCounterList = getWindowCounterList statsFlattened
-    validateLabels tidMap
+    when listWindows $ do
+        (_, statsFlattened, _) <- loadStats path flattenWindows
+        let wins = List.nub $ "default" : fmap fst (getWindowCounterList statsFlattened)
+        putStrLn "Available windows:"
+        mapM_ (putStrLn . ("  " ++)) wins
 
-    if detailed
-    then showOneCounterPerWindow
-            maxLines statsRaw statsFlattened tidMap windowCounterList
-    else showAllCountersPerWindow
-            maxLines
-            flattenWindows statsRaw statsFlattened tidMap windowCounterList
+    when (not listCounters && not listWindows) $ do
+        (statsRaw, statsFlattened, tidMap) <- loadStats path flattenWindows
+        let windowCounterList = getWindowCounterList statsFlattened
+        validateLabels tidMap
+        if detailed
+        then showOneCounterPerWindow
+                maxLines statsRaw statsFlattened tidMap windowCounterList
+        else showAllCountersPerWindow
+                maxLines
+                flattenWindows statsRaw statsFlattened tidMap windowCounterList

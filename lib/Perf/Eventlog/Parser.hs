@@ -238,7 +238,7 @@ data Counter =
     | ProcessUserCPUTime
     | ProcessSystemCPUTime
 
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Enum, Bounded)
 
 -- data Location = Enter | Exit | Resume | Suspend deriving Show
 data Location = Resume | Suspend | Exit | Purge deriving Show
