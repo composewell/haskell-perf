@@ -466,6 +466,9 @@ optsInfo = info (configParser <**> helper)
 -- Entry point
 -------------------------------------------------------------------------------
 
+-- XXX Add two different commands "hperf eventlog" and "hperf metrics", one for
+-- eventlog analysis and the other for metrics collected by other methods.
+--
 -- XXX Are the events for a particular thread guaranteed to come in order. What
 -- if a thread logged events to a particular capability buffer and then got
 -- scheduled on another capability before its eventlog could be flushed from
