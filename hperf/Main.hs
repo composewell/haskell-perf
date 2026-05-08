@@ -432,6 +432,7 @@ data Config = Config
     { configFile :: FilePath
     , configFlattenWindows :: Bool
     , configMaxLines :: Int
+    , configDetailed :: Bool
     }
 
 configParser :: Parser Config
@@ -452,6 +453,11 @@ configParser = Config
             <> value 10
             <> showDefault
             <> help "Maximum number of thread rows to print per table"
+            )
+    <*> switch
+            (  long "detailed"
+            <> short 'd'
+            <> help "Print detailed per-counter stats instead of summary"
             )
 
 optsInfo :: ParserInfo Config
@@ -539,11 +545,6 @@ printSummarySection ::
     -> [(String, Counter)]
     -> IO ()
 printSummarySection maxLines foldWindowStats statsRaw statsFlattened tidMap windowCounterList = do
-    putStrLn "--------------------------------------------------"
-    putStrLn "Summary Stats"
-    putStrLn "--------------------------------------------------"
-    putStrLn ""
-
     -- TODO: filter the counters to be printed based on Config/CLI
     -- TODO: filter the windows or threads to be printed
     let ctrs = List.nub $ fmap snd windowCounterList
@@ -564,10 +565,8 @@ printDetailedSection ::
     -> [(String, Counter)]
     -> IO ()
 printDetailedSection maxLines rawStats foldedStats tidMap windowCounterList = do
-    putStrLn "--------------------------------------------------"
-    putStrLn "Detailed Stats"
-    putStrLn "--------------------------------------------------"
-    putStrLn ""
+    -- XXX TODO need to print summary info as well in this.
+
     -- hack - currently we do not compute avg and stddev in flattened
     let getStats w = if w == "default" then rawStats else foldedStats
     -- For each (window, counter) list all threads
@@ -590,6 +589,7 @@ main = do
     Config { configFile = path
            , configFlattenWindows = flattenWindows
            , configMaxLines = maxLines
+           , configDetailed = detailed
            } <- execParser optsInfo
 
     (statsRaw, statsFlattened, tidMap) <- loadStats path flattenWindows
@@ -597,8 +597,9 @@ main = do
     let windowCounterList = getWindowCounterList statsFlattened
     validateLabels tidMap
 
-    printSummarySection
-        maxLines
-        flattenWindows statsRaw statsFlattened tidMap windowCounterList
-    printDetailedSection
-        maxLines statsRaw statsFlattened tidMap windowCounterList
+    if detailed
+    then printDetailedSection
+            maxLines statsRaw statsFlattened tidMap windowCounterList
+    else printSummarySection
+            maxLines
+            flattenWindows statsRaw statsFlattened tidMap windowCounterList
