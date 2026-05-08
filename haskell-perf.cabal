@@ -163,7 +163,7 @@ library
 
 executable hperf
   import: compile-options, optimization-options
-  hs-source-dirs: src
+  hs-source-dirs: hperf
   main-is: Main.hs
   build-depends:
        base >= 4.9 && < 5
