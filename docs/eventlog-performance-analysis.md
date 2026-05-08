@@ -21,6 +21,10 @@ TBD: document the exact limitations and differences.
 
 ## Generating the eventlog
 
+IMPORTANT: The `hperf` eventlog analysis program works only with the patched
+`ghc` executable, if you use it with stock ghc it will not understand the
+eventlog format and will generate errors.
+
 To generate the event log, we need to enable event log at compile time
 (on modern GHCs it is always enabled) and the run the program with
 eventlog enabled at run-time, we use the `-l` rts option to do that.
@@ -28,11 +32,9 @@ eventlog enabled at run-time, we use the `-l` rts option to do that.
 There are multiple ways of running your program with eventlog enabled at
 run-time:
 
-__GHC Command Line__:
-
 Compiling:
 ```
-ghc Main.hs -rtsopts
+ghc Main.hs -eventlog -rtsopts
 ```
 
 Running:
@@ -42,7 +44,7 @@ Running:
 
 You can bake in the rts options during compilation itself:
 ```
-ghc Main.hs -with-rtsopts=-l
+ghc Main.hs -eventlog -with-rtsopts=-l
 ```
 
 Now you can run without any explicit RTS options:
@@ -62,7 +64,7 @@ to use the `-N1` rts option.
 
 ## Measurement instrumentation
 
-See the example in [examples/traceEventIO.hs](examples/traceEventIO.hs) .
+See the example in [examples/traceEventIO.hs](../examples/traceEventIO.hs) .
 
 Use the `traceEventIO` function to log events. Add an event before and
 after the code block you want to measure. The event message before the block
