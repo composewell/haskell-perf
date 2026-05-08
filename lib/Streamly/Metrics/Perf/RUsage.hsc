@@ -36,6 +36,8 @@ w64ToCLong = fromIntegral
 -- struct timeval
 -------------------------------------------------------------------------------
 
+-- Note: On Windows winsock library can be used for struct timeval.
+
 data TimeVal =
     TimeVal
         {-# UNPACK #-} !Word64 -- sec
