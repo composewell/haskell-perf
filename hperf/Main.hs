@@ -198,13 +198,13 @@ printTable rows = do
 getStatField :: String -> (k, [(String, Int)]) -> Maybe Int
 getStatField x kv = List.lookup x $ snd kv
 
-printWindowCounter ::
+showCounterDetailsForWindow ::
        Int
     -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 String
     -> (String, Counter)
     -> IO ()
-printWindowCounter maxLines statsRaw tidMap (w, ctr) = do
+showCounterDetailsForWindow maxLines statsRaw tidMap (w, ctr) = do
     if w == "default"
         then
             putStrLn $ "Global thread wise stats for [" ++ show ctr ++ "]"
@@ -275,7 +275,7 @@ windowLevelCounters =
 -- which could be extremely large. Also, we will be able to report online, in
 -- real time. We will need a Map of windows, which will store a Map of tids
 -- which will store a list or Map of counters.
-printAllCounters ::
+showAllCountersForWindow ::
        Int
     -> Bool
     -> [((Word32, String, Counter), [(String, Int)])]
@@ -283,7 +283,7 @@ printAllCounters ::
     -> [Counter]
     -> String
     -> IO ()
-printAllCounters maxLines concurrent statsRaw tidMap ctrs w = do
+showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
     let
         windowTotals :: [((Word32, Counter), Int)]
         windowTotals = fmap toTotal $ filter selectWindow statsRaw
@@ -294,7 +294,7 @@ printAllCounters maxLines concurrent statsRaw tidMap ctrs w = do
                 (fmap selectCounter ctrs1)
 
     if null ctrs1
-    then putStrLn "printAllCounters: no counters to print"
+    then putStrLn "showAllCountersForWindow: no counters to print"
     else do
         -- Each tid must have all the counters present and in the same order.
         r <- Stream.fold Fold.the $ Stream.fromList tidList
@@ -442,9 +442,9 @@ configParser = Config
             <> help "Path to the GHC eventlog file to analyse"
             )
     <*> switch
-            (  long "fold-window-threads"
+            (  long "fold-threads"
             <> short 'f'
-            <> help "Combine stats for windows with the same name across all threads"
+            <> help "Instead of per thread windows, show all threads combined per window"
             )
     <*> option auto
             (  long "max-lines"
@@ -454,10 +454,12 @@ configParser = Config
             <> showDefault
             <> help "Maximum number of thread rows to print per table"
             )
+    -- By default prints one table per window consisting of all counters
+    -- summary for that window.
     <*> switch
             (  long "detailed"
             <> short 'd'
-            <> help "Print detailed per-counter stats instead of summary"
+            <> help "Print details for each counter for each window"
             )
 
 optsInfo :: ParserInfo Config
@@ -536,7 +538,7 @@ validateLabels tidMap = mapM_ checkLabel (Map.toList tidMap)
         error $ "Duplicate non-matching label events for thread: " ++ show tid
     checkLabel _ = pure ()
 
-printSummarySection ::
+showAllCountersPerWindow ::
        Int
     -> Bool
     -> [((Word32, String, Counter), [(String, Int)])]
@@ -544,7 +546,7 @@ printSummarySection ::
     -> Map Word32 (Maybe String)
     -> [(String, Counter)]
     -> IO ()
-printSummarySection maxLines foldWindowStats statsRaw statsFlattened tidMap windowCounterList = do
+showAllCountersPerWindow maxLines foldWindowStats statsRaw statsFlattened tidMap windowCounterList = do
     -- TODO: filter the counters to be printed based on Config/CLI
     -- TODO: filter the windows or threads to be printed
     let ctrs = List.nub $ fmap snd windowCounterList
@@ -553,24 +555,24 @@ printSummarySection maxLines foldWindowStats statsRaw statsFlattened tidMap wind
         getStats w = if w == "default" then statsRaw else statsFlattened
 
     let f w =
-            printAllCounters
+            showAllCountersForWindow
                 maxLines foldWindowStats (getStats w) (fmap fromJust tidMap) ctrs w
      in mapM_ f wins
 
-printDetailedSection ::
+showOneCounterPerWindow ::
        Int
     -> [((Word32, String, Counter), [(String, Int)])]
     -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 (Maybe String)
     -> [(String, Counter)]
     -> IO ()
-printDetailedSection maxLines rawStats foldedStats tidMap windowCounterList = do
+showOneCounterPerWindow maxLines rawStats foldedStats tidMap windowCounterList = do
     -- XXX TODO need to print summary info as well in this.
 
     -- hack - currently we do not compute avg and stddev in flattened
     let getStats w = if w == "default" then rawStats else foldedStats
     -- For each (window, counter) list all threads
-    let f (w,c) = printWindowCounter maxLines (getStats w) (fmap fromJust tidMap) (w,c)
+    let f (w,c) = showCounterDetailsForWindow maxLines (getStats w) (fmap fromJust tidMap) (w,c)
      in mapM_ f windowCounterList
 
 -------------------------------------------------------------------------------
@@ -598,8 +600,8 @@ main = do
     validateLabels tidMap
 
     if detailed
-    then printDetailedSection
+    then showOneCounterPerWindow
             maxLines statsRaw statsFlattened tidMap windowCounterList
-    else printSummarySection
+    else showAllCountersPerWindow
             maxLines
             flattenWindows statsRaw statsFlattened tidMap windowCounterList
