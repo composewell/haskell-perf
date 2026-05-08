@@ -488,27 +488,43 @@ optsInfo = info (configParser <**> helper)
 
 loadStats ::
        FilePath
+    -> IO
+    --  ( Map (tid, window tag, counter) (Maybe [(stat name, value)])
+        ( Map (Word32, String, Counter) (Maybe [(String, Int)])
+    --  , Map tid (Maybe thread-name))
+        , Map Word32 (Maybe String)
+        )
+loadStats path = do
+    let chunks = File.readChunks (Path.fromString_ path)
+    (kv, rest) <- parseLogHeader $ StreamK.fromStream chunks
+    -- putStrLn $ show kv
+    eventChunks <- parseDataHeader rest
+    let tagged = fmap tagEither $ generateEvents kv eventChunks
+        toLabels = Fold.kvToMap Fold.the
+        collector = Fold.partition toStats toLabels
+    Stream.fold collector tagged
+
+    where
+
+    tagEither (CounterEvent tid tag ctr loc val) =
+        Left ((tid, tag, ctr), (loc, fromIntegral val))
+    tagEither (LabelEvent tid label) = Right (tid, label)
+
+getAllStats ::
+       FilePath
     -> Bool
     -> IO
         ( [((Word32, String, Counter), [(String, Int)])]
         , [((Word32, String, Counter), [(String, Int)])]
         , Map Word32 (Maybe String)
         )
-loadStats path mergeThreads = do
-    let stream = File.readChunks (Path.fromString_ path)
-
-    (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
-    -- putStrLn $ show kv
-    events <- parseDataHeader rest
-    (statsMap, tidMap) <-
-        Stream.fold
-            (Fold.partition toStats (Fold.kvToMap Fold.the))
-            (fmap toEither $ generateEvents kv events)
+getAllStats path mergeThreads = do
+    (statsMap, tidMap) <- loadStats path
     -- statsMap :: Map (tid, window tag, counter) (Maybe [(stat name, value)])
     -- putStrLn $ ppShow r
     -- putStrLn $ show tidMap
     let
-        -- statsRaw :: [(tid, window tag, counter), [(stat name, value)]]
+        -- rawStats :: [(tid, window tag, counter), [(stat name, value)]]
         rawStats =
             -- TODO: get the sorting field from Config/CLI
               -- List.sortOn (getStatField "tid")
@@ -524,12 +540,6 @@ loadStats path mergeThreads = do
     foldedStats <-
         (if mergeThreads then foldWindowThreads else return) rawStats
     return (rawStats, foldedStats, tidMap)
-
-    where
-
-    toEither (CounterEvent tid tag ctr loc val) =
-        Left ((tid, tag, ctr), (loc, fromIntegral val))
-    toEither (LabelEvent tid label) = Right (tid, label)
 
 getWindowCounterList ::
     [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
@@ -613,13 +623,14 @@ main = do
         mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
 
     when listWindows $ do
-        (_, statsFlattened, _) <- loadStats path flattenWindows
+        (_, statsFlattened, _) <- getAllStats path flattenWindows
         let wins = List.nub $ "default" : fmap fst (getWindowCounterList statsFlattened)
         putStrLn "Available windows:"
         mapM_ (putStrLn . ("  " ++)) wins
 
     when (not listCounters && not listWindows) $ do
-        (statsRaw, statsFlattened, tidMap) <- loadStats path flattenWindows
+        -- XXX flattened stats are needed only in detailed view
+        (statsRaw, statsFlattened, tidMap) <- getAllStats path flattenWindows
         let windowCounterList = getWindowCounterList statsFlattened
         validateLabels tidMap
         if detailed
