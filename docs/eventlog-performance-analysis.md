@@ -1,12 +1,13 @@
-# GHC Event logging
+# Haskell Perf Analysis using Eventlog
 
-Available in GHC 9.2.8 RTS patch. Can be ported to later GHCs.
+The GHC RTS instrumentation for accurate and thread-aware event logging
+is available in GHC 9.2.8 RTS patch. Can be ported to later GHCs.
 
 <!--
 GHC Patch: https://github.com/composewell/ghc/tree/ghc-8.10.7-eventlog-enhancements
 -->
 
-Eventlog based Haskell thread aware time and allocation analysis is
+Eventlog based Haskell-thread aware time and allocation analysis is
 possible with stock GHC but there are some limitations and drawbacks
 which are fixed in the RTS patch described below. The patch adds
 accurate timing and allocation information and hardware performance
@@ -18,53 +19,57 @@ program not just the current thread.
 TBD: document the exact limitations and differences.
 -->
 
-## Enable Linux perf counters
-
-Enable unrestricted use of perf counters:
-
-```
-# echo -1 > /proc/sys/kernel/perf_event_paranoid
-```
-
-## Disable CPU scaling
-
-Set the scaling governer of all your cpus to `performance`:
-
-```
-echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-echo performance > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
-...
-...
-echo performance > /sys/devices/system/cpu/cpu7/cpufreq/scaling_governor
-```
-
 ## Generating the eventlog
 
-To generate the event log, we need to compile the program with the eventlog enabled
-and run the program setting the `-l` rts option.
+To generate the event log, we need to enable event log at compile time
+(on modern GHCs it is always enabled) and the run the program with
+eventlog enabled at run-time, we use the `-l` rts option to do that.
 
-There are multiple ways of doing this.
+There are multiple ways of running your program with eventlog enabled at
+run-time:
 
-__Using plain GHC__:
+__GHC Command Line__:
 
+Compiling:
 ```
-ghc Main.hs -rtsopts -eventlog
+ghc Main.hs -rtsopts
+```
+
+Running:
+```
 ./Main +RTS -l -RTS
 ```
 
-__Using Cabal__:
-
-The `.cabal` file should contain the following ghc options
+You can bake in the rts options during compilation itself:
 ```
-ghc-options: -eventlog "-with-rtsopts=-l"
+ghc Main.hs -with-rtsopts=-l
 ```
 
-If the `-threaded` option is used while compiling. You may want to use the `-N1`
-rts option.
+Now you can run without any explicit RTS options:
+```
+./Main
+```
 
-## Creating windows
+After we run the above program a "Main.eventlog" file will be generated. This
+file can be analyzed using the `hperf` executable in this package to
+generate an analysis report. To be able to find anything in the report you need
+to first instrument your program which is described in the following sections.
 
-Helper function to create windows:
+Note 1: For older compilers you need `-eventlog` GHC flag as well when building
+
+Note 2: If the `-threaded` option is used while compiling. You may want
+to use the `-N1` rts option.
+
+## Measurement instrumentation
+
+See the example in [examples/traceEventIO.hs](examples/traceEventIO.hs) .
+
+Use the `traceEventIO` function to log events. Add an event before and
+after the code block you want to measure. The event message before the block
+should be in the format "START: <label>", and the message after it should be
+"END: <label>" where the label for start and end must match.
+
+You can create a helper function as below:
 
 ```
 {-# LANGUAGE BangPatterns #-}
@@ -84,10 +89,15 @@ withTracingFlow tag action = do
 We can wrap parts of the flow we want to analyze with `withTracingFlow` using a
 tag to help us identify it.
 
-## End of Window
+Our analyzer program will analyze the windows between START and END.
 
-You can put the END of the window in different paths but ensure that all paths
-are covered:
+## End of Window Instrumentation
+
+START and END of the same label can be placed anywhere in the program, if any
+code path goes from START to END, it will be reported under the same label.
+
+Usually we should put an END event in all possible exit paths where multiple
+exit paths are possible.
 
 ```
   r <- f x
@@ -110,8 +120,9 @@ timing and allocations reported because of the measurement overhead.
     _ <- traceEventIO $ "END:emptyWindow"
 ```
 
-The timing is due to the time measurement system call itself. The allocations
-are due to the traceEventIO haskell code execution. TODO: fix the allocations.
+The time reported in this case is attributed to the time measurement system
+call itself which is invoked by traceEventIO. The allocations are also
+attributed to the traceEventIO haskell code execution.
 
 ## Measurement with Lazy Evaluation
 
@@ -133,10 +144,11 @@ For correct measurement use the following code:
     return v
 ```
 
-## Labelling Threads
+## Thread Labels
 
-We should label our threads to identify the thread to scrutinize while reading
-the stats.
+To be able to identify the threads in the eventlogs we should label the Haskell
+threads, the labels will be reported in the analysis, if there is no label we
+will not be able to know where that thread was spawned from.
 
 For example,
 
@@ -174,7 +186,7 @@ eventlogMiddleware app request respond = do
 
 We can use `eventlogMiddleware` as the outermost layer.
 
-## Reading the results
+## Analyzing the Eventlog Output
 
 We get a lot of output currently. We are in the process of simplifying the
 statistics and making the details controllable via options.

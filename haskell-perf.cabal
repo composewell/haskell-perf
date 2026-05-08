@@ -180,26 +180,26 @@ executable hperf
 
 -- XXX Use examples flag to compile these
 
-executable console-loop-multi-thread
-  import: compile-options
-  hs-source-dirs: examples
-  ghc-options: -threaded -rtsopts
-  main-is: console-loop-multi-thread.hs
-  build-depends:
-       base >= 4.9 && < 5
-     , unix < 2.9
-  if os(windows)
-    buildable: False
-
-executable with-stats
+executable getRTSStats
   import: test-options
   hs-source-dirs: examples
-  main-is: withStats.hs
+  main-is: getRTSStats.hs
   ghc-options: -O2 -fmax-worker-args=16 -fspec-constr-recursive=16
   build-depends:
        base
      , haskell-perf
      , streamly-core
+
+executable traceEventIO
+  import: compile-options
+  hs-source-dirs: examples
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-l"
+  main-is: traceEventIO.hs
+  build-depends:
+       base >= 4.9 && < 5
+     , unix < 2.9
+  if os(windows)
+    buildable: False
 
 -------------------------------------------------------------------------------
 -- Tests
