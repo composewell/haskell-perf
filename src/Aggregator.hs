@@ -26,15 +26,15 @@ import qualified Data.Set as Set
 
 -- All counter events are recorded against a unique key (tid, window, counter).
 --
--- A user defined window is prefixed with the thread-id of the thread which
--- started it. Therefore, if the window code is entered by multiple threads,
--- each thread is assigned a different window name.
+-- A user defined measurement window name is prefixed with the thread-id of the
+-- thread which started it. Therefore, if the window is entered by multiple
+-- threads, each thread is assigned a different window name.
 --
--- Each window accounts all threads active at the time when the window is
--- active. Therefore, any thread start/stop events are broadcast to all the
--- currently active windows.
+-- Each window performs accounting for all threads active at the time when the
+-- window is active. Therefore, any thread start/stop events are broadcast to
+-- all the currently active windows.
 --
--- When a window starts, many threads may already be existing in the system.
+-- When a measurement window starts, many threads may already be existing in the system.
 -- After the window is entered, events of all threads are broadcast to the
 -- window. If a thread was already active when the window was entered, then we
 -- may get a suspend event without first getting a resume event. Similar,

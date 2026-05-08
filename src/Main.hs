@@ -28,6 +28,7 @@ import Streamly.Data.Array (Array)
 import Streamly.Data.Stream (Stream)
 import Streamly.Data.StreamK (StreamK)
 import Streamly.Internal.Data.Fold (Fold (..), postscanlMaybe)
+import Streamly.Data.Scanl (Scanl)
 import qualified Streamly.Data.Scanl as Scanl
 import qualified Streamly.Internal.Data.Scanl as Scanl (scanlMany, cumulativeScan)
 import qualified Streamly.Statistics.Scanl as Stats
@@ -74,7 +75,10 @@ secondMaybe f = fmap f1 (Fold.unzip (fmap fromJust Fold.the) f)
 double :: Int -> Double
 double = fromIntegral
 
-untilLeft :: Monad m => Scanl.Scanl m b1 b2 -> Scanl.Scanl m (Either (Maybe b1) b1) b2
+-- | Modify the input of a scan to accept an "Either" input, the modified scan
+-- keeps consuming right inputs until a left input arrives, which terminates
+-- the scan.
+untilLeft :: Monad m => Scanl m b1 b2 -> Scanl m (Either (Maybe b1) b1) b2
 untilLeft f =
       Scanl.takeEndBy isLeft
     $ Scanl.lmap (either id Just)
@@ -110,7 +114,7 @@ combineWindowStats = Fold.kvToMap combineStats
 -- Statistics collection for each counter
 
 {-# INLINE stats #-}
-stats :: Scanl.Scanl IO Int64 [(String, Int)]
+stats :: Scanl IO Int64 [(String, Int)]
 stats =
       Scanl.lmap (fromIntegral :: Int64 -> Int)
     $ Scanl.distribute
@@ -124,11 +128,11 @@ stats =
         ]
 
 {-# INLINE threadStats #-}
-threadStats :: Scanl.Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
+threadStats :: Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
 threadStats = untilLeft stats
 
 {-# INLINE windowStats #-}
-windowStats :: Scanl.Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
+windowStats :: Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
 windowStats = Scanl.scanlMany (untilLeft Scanl.sum) stats
 
 {-# INLINE toStats #-}
@@ -139,7 +143,7 @@ toStats ::
         ((Word32, String, Counter), (Location, Int64))
         -- Map (tid, window tag, counter) (Maybe [(stat name, value)])
         (Map (Word32, String, Counter) (Maybe [(String, Int)]))
-toStats = Fold.demuxKvToMap (\k -> pure (Just (f1 k)))
+toStats = Fold.demuxKvToMap (pure . Just . f1)
 
     where
 
