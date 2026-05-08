@@ -405,10 +405,10 @@ printAllCounters maxLines concurrent statsRaw tidMap ctrs w = do
             Nothing -> "-"
 
 -- | Combine stats from all windows with the same name but different thread-id
-flattenStats ::
+foldWindowThreads ::
        [((Word32, String, Counter), [(String, Int)])]
     -> IO [((Word32, String, Counter), [(String, Int)])]
-flattenStats statsRaw = do
+foldWindowThreads statsRaw = do
     let renameWindow w =
             let (_, r) = span (/= ':') w
             in if null r then w else '0':r
@@ -441,9 +441,9 @@ configParser = Config
             <> help "Path to the GHC eventlog file to analyse"
             )
     <*> switch
-            (  long "flatten-windows"
+            (  long "fold-window-threads"
             <> short 'f'
-            <> help "Collapse window-level stats across threads"
+            <> help "Combine stats for windows with the same name across all threads"
             )
     <*> option auto
             (  long "max-lines"
@@ -463,6 +463,118 @@ optsInfo = info (configParser <**> helper)
     )
 
 -------------------------------------------------------------------------------
+-- Report
+-------------------------------------------------------------------------------
+
+loadStats ::
+       FilePath
+    -> Bool
+    -> IO
+        ( [((Word32, String, Counter), [(String, Int)])]
+        , [((Word32, String, Counter), [(String, Int)])]
+        , Map Word32 (Maybe String)
+        )
+loadStats path mergeThreads = do
+    let stream = File.readChunks (Path.fromString_ path)
+
+    (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
+    -- putStrLn $ show kv
+    events <- parseDataHeader rest
+    (statsMap, tidMap) <-
+        Stream.fold
+            (Fold.partition toStats (Fold.kvToMap Fold.the))
+            (fmap toEither $ generateEvents kv events)
+    -- statsMap :: Map (tid, window tag, counter) (Maybe [(stat name, value)])
+    -- putStrLn $ ppShow r
+    -- putStrLn $ show tidMap
+    let
+        -- statsRaw :: [(tid, window tag, counter), [(stat name, value)]]
+        rawStats =
+            -- TODO: get the sorting field from Config/CLI
+              -- List.sortOn (getStatField "tid")
+            -- TODO: get the threshold from Config/CLI
+            --  $ filter (\x -> fromJust (getStatField "total" x) > 0)
+              map (\(k, v) -> (k, filter (\(k1,_) -> k1 /= "latest") v))
+            $ map (\(k, v) -> (k, fromJust v))
+            $ filter (\(_, v) -> isJust v)
+            $ Map.toList statsMap
+
+    -- XXX Take a window argument from config/CLI and rename only specific
+    -- windows or all windows depending on that.
+    foldedStats <-
+        (if mergeThreads then foldWindowThreads else return) rawStats
+    return (rawStats, foldedStats, tidMap)
+
+    where
+
+    toEither (CounterEvent tid tag ctr loc val) =
+        Left ((tid, tag, ctr), (loc, fromIntegral val))
+    toEither (LabelEvent tid label) = Right (tid, label)
+
+getWindowCounterList ::
+    [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
+getWindowCounterList foldedStats =
+      List.nub
+    -- XXX Control this by config
+    $ filter (\(w,_) -> not (":foreign" `List.isSuffixOf` w))
+    $ filter (\(_,c) -> c `notElem` windowLevelCounters)
+    $ map (\(_, window, counter) -> (window, counter))
+    $ map fst foldedStats
+
+validateLabels :: Map Word32 (Maybe String) -> IO ()
+validateLabels tidMap = mapM_ checkLabel (Map.toList tidMap)
+
+    where
+
+    checkLabel (tid, Nothing) =
+        error $ "Duplicate non-matching label events for thread: " ++ show tid
+    checkLabel _ = pure ()
+
+printSummarySection ::
+       Int
+    -> Bool
+    -> [((Word32, String, Counter), [(String, Int)])]
+    -> [((Word32, String, Counter), [(String, Int)])]
+    -> Map Word32 (Maybe String)
+    -> [(String, Counter)]
+    -> IO ()
+printSummarySection maxLines foldWindowStats statsRaw statsFlattened tidMap windowCounterList = do
+    putStrLn "--------------------------------------------------"
+    putStrLn "Summary Stats"
+    putStrLn "--------------------------------------------------"
+    putStrLn ""
+
+    -- TODO: filter the counters to be printed based on Config/CLI
+    -- TODO: filter the windows or threads to be printed
+    let ctrs = List.nub $ fmap snd windowCounterList
+        wins = List.nub $ "default" : fmap fst windowCounterList
+        -- hack - currently we do not compute avg and stddev in flattened
+        getStats w = if w == "default" then statsRaw else statsFlattened
+
+    let f w =
+            printAllCounters
+                maxLines foldWindowStats (getStats w) (fmap fromJust tidMap) ctrs w
+     in mapM_ f wins
+
+printDetailedSection ::
+       Int
+    -> [((Word32, String, Counter), [(String, Int)])]
+    -> [((Word32, String, Counter), [(String, Int)])]
+    -> Map Word32 (Maybe String)
+    -> [(String, Counter)]
+    -> IO ()
+printDetailedSection maxLines rawStats foldedStats tidMap windowCounterList = do
+    putStrLn "--------------------------------------------------"
+    putStrLn "Detailed Stats"
+    putStrLn "--------------------------------------------------"
+    putStrLn ""
+    -- hack - currently we do not compute avg and stddev in flattened
+    let getStats w = if w == "default" then rawStats else foldedStats
+    -- For each (window, counter) list all threads
+    let f (w,c) = printWindowCounter maxLines (getStats w) (fmap fromJust tidMap) (w,c)
+     in mapM_ f windowCounterList
+
+-------------------------------------------------------------------------------
 -- Entry point
 -------------------------------------------------------------------------------
 
@@ -479,76 +591,14 @@ main = do
            , configFlattenWindows = flattenWindows
            , configMaxLines = maxLines
            } <- execParser optsInfo
-    let stream = File.readChunks (Path.fromString_ path)
 
-    (kv, rest) <- parseLogHeader $ StreamK.fromStream stream
-    -- putStrLn $ show kv
-    events <- parseDataHeader rest
-    (statsMap, tidMap) <-
-        Stream.fold
-            (Fold.partition toStats (Fold.kvToMap Fold.the))
-            (fmap toEither $ generateEvents kv events)
-    -- statsMap :: Map (tid, window tag, counter) (Maybe [(stat name, value)])
-    -- putStrLn $ ppShow r
-    -- putStrLn $ show tidMap
-    let
-        -- statsRaw :: [(tid, window tag, counter), [(stat name, value)]]
-        statsRaw =
-            -- TODO: get the sorting field from Config/CLI
-              -- List.sortOn (getStatField "tid")
-            -- TODO: get the threshold from Config/CLI
-            --  $ filter (\x -> fromJust (getStatField "total" x) > 0)
-              map (\(k, v) -> (k, filter (\(k1,_) -> k1 /= "latest") v))
-            $ map (\(k, v) -> (k, fromJust v))
-            $ filter (\(_, v) -> isJust v)
-            $ Map.toList statsMap
+    (statsRaw, statsFlattened, tidMap) <- loadStats path flattenWindows
 
-    -- XXX Take a window argument from config/CLI and rename only specific
-    -- windows or all windows depending on that.
-    statsFlattened <-
-        (if flattenWindows then flattenStats else return) statsRaw
+    let windowCounterList = getWindowCounterList statsFlattened
+    validateLabels tidMap
 
-    let windowCounterList =
-              List.nub
-            -- XXX Control this by config
-            $ filter (\(w,_) -> not (":foreign" `List.isSuffixOf` w))
-            $ filter (\(_,c) -> c `notElem` windowLevelCounters)
-            $ map (\(_, window, counter) -> (window, counter))
-            $ map fst statsFlattened
-    mapM_ checkLabel (Map.toList tidMap)
-
-    putStrLn "--------------------------------------------------"
-    putStrLn "Summary Stats"
-    putStrLn "--------------------------------------------------"
-    putStrLn ""
-
-    -- TODO: filter the counters to be printed based on Config/CLI
-    -- TODO: filter the windows or threads to be printed
-    let ctrs = List.nub $ fmap snd windowCounterList
-        wins = List.nub $ "default" : fmap fst windowCounterList
-        -- hack - currently we do not compute avg and stddev in flattened
-        getStats w = if w == "default" then statsRaw else statsFlattened
-
-    let f w =
-            printAllCounters
-                maxLines flattenWindows (getStats w) (fmap fromJust tidMap) ctrs w
-     in mapM_ f wins
-
-    putStrLn "--------------------------------------------------"
-    putStrLn "Detailed Stats"
-    putStrLn "--------------------------------------------------"
-    putStrLn ""
-
-    -- For each (window, counter) list all threads
-    let f (w,c) = printWindowCounter maxLines (getStats w) (fmap fromJust tidMap) (w,c)
-     in mapM_ f windowCounterList
-
-    where
-
-    toEither (CounterEvent tid tag ctr loc val) =
-        Left ((tid, tag, ctr), (loc, fromIntegral val))
-    toEither (LabelEvent tid label) = Right (tid, label)
-
-    checkLabel (tid,Nothing) =
-        error $ "Duplicate non-matching label events for thread: " ++ show tid
-    checkLabel _ = pure ()
+    printSummarySection
+        maxLines
+        flattenWindows statsRaw statsFlattened tidMap windowCounterList
+    printDetailedSection
+        maxLines statsRaw statsFlattened tidMap windowCounterList
