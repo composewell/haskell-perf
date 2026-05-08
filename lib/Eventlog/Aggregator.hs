@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Aggregator
+module Eventlog.Aggregator
     ( translateThreadEvents
     , collectThreadCounter
     )
@@ -8,7 +8,7 @@ where
 import Data.Int (Int64)
 import Data.Set (Set)
 import Data.Word (Word32)
-import EventParser (Event (..), Counter(..), Location(..))
+import Eventlog.EventParser (Event (..), Counter(..), Location(..))
 import Streamly.Internal.Data.Fold (Step(..))
 import Streamly.Internal.Data.Scanl (Scanl(..))
 import Streamly.Internal.Data.Tuple.Strict (Tuple'(..))

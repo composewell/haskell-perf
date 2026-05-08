@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import Aggregator
+import Eventlog.Aggregator
   ( collectThreadCounter,
     translateThreadEvents,
   )
@@ -16,7 +16,7 @@ import Data.Map (Map)
 import Data.Maybe (fromJust, isJust)
 import Data.Text.Format.Numbers (prettyI)
 import Data.Word (Word32, Word8)
-import EventParser
+import Eventlog.EventParser
   ( Counter (..),
     Location (..),
     Event (..),

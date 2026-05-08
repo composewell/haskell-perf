@@ -144,6 +144,8 @@ library
      , Streamly.Metrics.Measure
      -- , Streamly.Metrics.File
      -- , Streamly.Metrics.Console
+     , Eventlog.EventParser
+     , Eventlog.Aggregator
 
     if !os(windows)
       exposed-modules:
@@ -151,6 +153,7 @@ library
 
     build-depends:
        base >= 4.9 && < 5
+     , containers < 0.9
      , pretty-show >= 1.10 && < 1.11
      , stm >= 2.5.3 && < 2.6
      , streamly >= 0.11.0 && < 0.12
@@ -164,11 +167,11 @@ executable hperf
   import: compile-options, optimization-options
   hs-source-dirs: src
   main-is: Main.hs
-  other-modules: Aggregator, EventParser
   build-depends:
        base >= 4.9 && < 5
      , containers < 0.9
      , format-numbers < 0.2
+     , haskell-perf
      , optparse-applicative < 0.20
      , streamly-core >= 0.3.0 && < 0.4
      , streamly-statistics < 0.3
