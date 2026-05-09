@@ -49,9 +49,10 @@ With these tools you can find:
 
 ## Detailed documents
 
-For more details on each of the performance analysis methods see the following
-documents:
-* [GHC RTS Stats](docs/ghc-rts-performance-analysis.md)
-* [threadCPUTime# RTS primitive](docs/thread-cputime-primop.md)
-* [GHC Event logging](docs/eventlog-performance-analysis.md)
+For more details on performance measurement and each of the performance
+analysis methods see the following documents:
+* [Haskell performance measurement](docs/haskell-perf-measurement.md)
+* [Using RTS Stats](docs/ghc-rts-performance-analysis.md)
+* [Using threadCPUTime RTS primitive](docs/thread-cputime-primop.md)
+* [Using Event log based measurement](docs/eventlog-performance-analysis.md)
 * [GHC patches details](dev/ghc-work.md)
