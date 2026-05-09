@@ -113,9 +113,9 @@ combineWindowStats = Fold.kvToMap combineStats
 
 -- Statistics collection for each counter
 
-{-# INLINE stats #-}
-stats :: Scanl IO Int64 [(String, Int)]
-stats =
+{-# INLINE statScanner #-}
+statScanner :: Scanl IO Int64 [(String, Int)]
+statScanner =
       Scanl.lmap (fromIntegral :: Int64 -> Int)
     $ Scanl.distribute
         [ fmap (\x -> ("latest", fromJust x)) Scanl.latest
@@ -129,11 +129,11 @@ stats =
 
 {-# INLINE threadStats #-}
 threadStats :: Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
-threadStats = untilLeft stats
+threadStats = untilLeft statScanner
 
 {-# INLINE windowStats #-}
 windowStats :: Scanl IO (Either (Maybe Int64) Int64) [(String, Int)]
-windowStats = Scanl.scanlMany (untilLeft Scanl.sum) stats
+windowStats = Scanl.scanlMany (untilLeft Scanl.sum) statScanner
 
 {-# INLINE toStats #-}
 toStats ::
@@ -567,6 +567,14 @@ getStatMapTidMap path = do
     let statsMap1 = postProcess $ Map.toList statsMap
     return (statsMap1, tidMap)
 
+getWindowCounterList ::
+    [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
+getWindowCounterList stats =
+      List.nub
+    $ filter (\(_,c) -> c `notElem` windowLevelCounters)
+    $ map (\(_, window, counter) -> (window, counter))
+    $ map fst stats
+
 getAllStats ::
     Bool
     -> FilePath
@@ -587,16 +595,6 @@ getAllStats mergeThreads path = do
         else return statMap
     let windowCounterList = getWindowCounterList foldedStats
     return (statMap, tidMap, foldedStats, windowCounterList)
-
-getWindowCounterList ::
-    [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
-getWindowCounterList foldedStats =
-      List.nub
-    -- XXX Control this by config
-    $ filter (\(w,_) -> not (":foreign" `List.isSuffixOf` w))
-    $ filter (\(_,c) -> c `notElem` windowLevelCounters)
-    $ map (\(_, window, counter) -> (window, counter))
-    $ map fst foldedStats
 
 validateLabels :: Map Word32 (Maybe String) -> IO ()
 validateLabels tidMap = mapM_ checkLabel (Map.toList tidMap)
@@ -669,6 +667,7 @@ main = do
             mapM_ (putStrLn . ("  " ++)) wins
         CmdList (ListThreads path) -> do
             (_, tidMap) <- loadStats path
+            validateLabels tidMap
             putStrLn "Threads (id, label):"
             mapM_ (\(tid, mlabel) ->
                 putStrLn $ "  " ++ show tid ++ ", " ++ maybe "-" id mlabel)
@@ -680,10 +679,14 @@ main = do
             , analyseDetailed = detailed
             } -> do
             (statsMap, tidMap, foldedStats, windowCounterList) <- getAllStats mergeThreads path
+            -- XXX Control this by config
+            let windowCounterList1 =
+                    filter (\(w,_) -> not (":foreign" `List.isSuffixOf` w))
+                        windowCounterList
             validateLabels tidMap
             if detailed
             then showOneCounterPerWindow
-                    maxLines statsMap foldedStats tidMap windowCounterList
+                    maxLines statsMap foldedStats tidMap windowCounterList1
             else showAllCountersPerWindow
                     maxLines
-                    mergeThreads statsMap foldedStats tidMap windowCounterList
+                    mergeThreads statsMap foldedStats tidMap windowCounterList1
