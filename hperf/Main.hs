@@ -428,17 +428,37 @@ foldWindowThreads statsRaw = do
 -- CLI
 -------------------------------------------------------------------------------
 
-data Config = Config
-    { configFile :: FilePath
-    , configFlattenWindows :: Bool
-    , configMaxLines :: Int
-    , configDetailed :: Bool
-    , configListCounters :: Bool
-    , configListWindows :: Bool
+data ListSubCmd
+    = ListCounters
+    | ListWindows FilePath
+
+data AnalyseConfig = AnalyseConfig
+    { analyseFile :: FilePath
+    , analyseFoldThreads :: Bool
+    , analyseMaxLines :: Int
+    , analyseDetailed :: Bool
     }
 
-configParser :: Parser Config
-configParser = Config
+data Command
+    = CmdList ListSubCmd
+    | CmdAnalyse AnalyseConfig
+
+listSubCmdParser :: Parser ListSubCmd
+listSubCmdParser = subparser
+    (  command "counters"
+            (info (pure ListCounters)
+                (progDesc "List all available performance counters"))
+    <> command "windows"
+            (info
+                (ListWindows <$> argument str
+                    (  metavar "EVENTLOG-FILE"
+                    <> help "Path to the GHC eventlog file"
+                    ))
+                (progDesc "List all windows found in the eventlog file"))
+    )
+
+analyseConfigParser :: Parser AnalyseConfig
+analyseConfigParser = AnalyseConfig
     <$> argument str
             (  metavar "EVENTLOG-FILE"
             <> help "Path to the GHC eventlog file to analyse"
@@ -463,19 +483,19 @@ configParser = Config
             <> short 'd'
             <> help "Print details for each counter for each window"
             )
-    <*> switch
-            (  long "list-counters"
-            <> short 'c'
-            <> help "List all available counters and exit"
-            )
-    <*> switch
-            (  long "list-windows"
-            <> short 'w'
-            <> help "List all windows found in the eventlog file and exit"
-            )
 
-optsInfo :: ParserInfo Config
-optsInfo = info (configParser <**> helper)
+commandParser :: Parser Command
+commandParser = subparser
+    (  command "list"
+            (info (CmdList <$> listSubCmdParser)
+                (progDesc "List available counters or windows"))
+    <> command "analyse"
+            (info (CmdAnalyse <$> analyseConfigParser)
+                (progDesc "Analyse a GHC eventlog file"))
+    )
+
+optsInfo :: ParserInfo Command
+optsInfo = info (commandParser <**> helper)
     (  fullDesc
     <> progDesc ("Analyse CPU cost, heap allocations, and Linux perf event "
              ++ "counters for Haskell threads and user-defined code windows.")
@@ -629,30 +649,27 @@ showOneCounterPerWindow maxLines rawStats foldedStats tidMap windowCounterList =
 -- the previous capability?
 main :: IO ()
 main = do
-    Config { configFile = path
-           , configFlattenWindows = mergeThreads
-           , configMaxLines = maxLines
-           , configDetailed = detailed
-           , configListCounters = listCounters
-           , configListWindows = listWindows
-           } <- execParser optsInfo
-
-    when listCounters $ do
-        putStrLn "Supported counters:"
-        mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
-
-    when listWindows $ do
-        (_, _, _, windowCounterList) <- getAllStats mergeThreads path
-        let wins = List.nub $ "default" : fmap fst windowCounterList
-        putStrLn "Available windows:"
-        mapM_ (putStrLn . ("  " ++)) wins
-
-    when (not listCounters && not listWindows) $ do
-        (statsMap, tidMap, foldedStats, windowCounterList) <- getAllStats mergeThreads path
-        validateLabels tidMap
-        if detailed
-        then showOneCounterPerWindow
-                maxLines statsMap foldedStats tidMap windowCounterList
-        else showAllCountersPerWindow
-                maxLines
-                mergeThreads statsMap foldedStats tidMap windowCounterList
+    cmd <- execParser optsInfo
+    case cmd of
+        CmdList ListCounters -> do
+            putStrLn "Supported counters:"
+            mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
+        CmdList (ListWindows path) -> do
+            (_, _, _, windowCounterList) <- getAllStats False path
+            let wins = List.nub $ "default" : fmap fst windowCounterList
+            putStrLn "Available windows:"
+            mapM_ (putStrLn . ("  " ++)) wins
+        CmdAnalyse AnalyseConfig
+            { analyseFile = path
+            , analyseFoldThreads = mergeThreads
+            , analyseMaxLines = maxLines
+            , analyseDetailed = detailed
+            } -> do
+            (statsMap, tidMap, foldedStats, windowCounterList) <- getAllStats mergeThreads path
+            validateLabels tidMap
+            if detailed
+            then showOneCounterPerWindow
+                    maxLines statsMap foldedStats tidMap windowCounterList
+            else showAllCountersPerWindow
+                    maxLines
+                    mergeThreads statsMap foldedStats tidMap windowCounterList
