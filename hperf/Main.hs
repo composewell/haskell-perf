@@ -661,7 +661,7 @@ main = do
             putStrLn "Supported counters:"
             mapM_ (putStrLn . ("  " ++) . show) [minBound..maxBound :: Counter]
         CmdList (ListWindows path) -> do
-            (_, _, _, windowCounterList) <- getAllStats False path
+            (_, _, _, windowCounterList) <- getAllStats True path
             let wins = List.nub $ "default" : fmap fst windowCounterList
             putStrLn "Available windows:"
             mapM_ (putStrLn . ("  " ++)) wins
