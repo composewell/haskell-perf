@@ -431,6 +431,7 @@ foldWindowThreads statsRaw = do
 data ListSubCmd
     = ListCounters
     | ListWindows FilePath
+    | ListThreads FilePath
 
 data AnalyseConfig = AnalyseConfig
     { analyseFile :: FilePath
@@ -455,6 +456,13 @@ listSubCmdParser = subparser
                     <> help "Path to the GHC eventlog file"
                     ))
                 (progDesc "List all windows found in the eventlog file"))
+    <> command "threads"
+            (info
+                (ListThreads <$> argument str
+                    (  metavar "EVENTLOG-FILE"
+                    <> help "Path to the GHC eventlog file"
+                    ))
+                (progDesc "List all threads found in the eventlog file"))
     )
 
 analyseConfigParser :: Parser AnalyseConfig
@@ -659,6 +667,12 @@ main = do
             let wins = List.nub $ "default" : fmap fst windowCounterList
             putStrLn "Available windows:"
             mapM_ (putStrLn . ("  " ++)) wins
+        CmdList (ListThreads path) -> do
+            (_, tidMap) <- loadStats path
+            putStrLn "Threads (id, label):"
+            mapM_ (\(tid, mlabel) ->
+                putStrLn $ "  " ++ show tid ++ ", " ++ maybe "-" id mlabel)
+                (Map.toList tidMap)
         CmdAnalyse AnalyseConfig
             { analyseFile = path
             , analyseFoldThreads = mergeThreads
