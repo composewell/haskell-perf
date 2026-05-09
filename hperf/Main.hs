@@ -261,8 +261,12 @@ showCounterDetailsForWindow maxLines statsRaw tidMap (w, ctr) = do
          in printf "%d" tid : lb : map snd v
     select ((_, window, counter), _) = window == w && counter == ctr
 
-windowLevelCounters :: [Counter]
-windowLevelCounters =
+-- XXX we can only use the Process level counters to report the entire
+-- program's CPU time including all threads in the saummary data. Reporting
+-- this in the Windows times is not useful. We can use the OS thread's
+-- ThreadCPUTime only if there is only one Haskell thread running.
+processLevelCounters :: [Counter]
+processLevelCounters =
     [ ProcessCPUTime
     , ProcessUserCPUTime
     , ProcessSystemCPUTime
@@ -275,6 +279,10 @@ windowLevelCounters =
 -- which could be extremely large. Also, we will be able to report online, in
 -- real time. We will need a Map of windows, which will store a Map of tids
 -- which will store a list or Map of counters.
+
+-- | Print a table for the given window, one row per thread that ever entered
+-- the window,  listing accumulated value for each
+-- counter.
 showAllCountersForWindow ::
        Int
     -> Bool
@@ -283,10 +291,10 @@ showAllCountersForWindow ::
     -> [Counter]
     -> String
     -> IO ()
-showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
+showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
     let
         windowTotals :: [((Word32, Counter), Int)]
-        windowTotals = fmap toTotal $ filter selectWindow statsRaw
+        windowTotals = fmap toTotal $ filter selectWindow stats
 
         tidList =
             fmap
@@ -312,7 +320,7 @@ showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
                     (\f -> fmap snd $ filter f windowTotals)
                     (fmap selectCounter ctrs1)
 
-            windowCounts = fmap toCounts $ filter selectWindow statsRaw
+            windowCounts = fmap toCounts $ filter selectWindow stats
             oneCounterCounts = filter (selectCounter (head ctrs1)) windowCounts
             counts = fmap snd $ oneCounterCounts
 
@@ -338,25 +346,31 @@ showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
                 -- we cannot combine the window level counters.
                 putStrLn $ "Window [" ++ w ++ "]" ++ " thread wise stat summary"
                 when (not concurrent) $ do
-                    mapM_ (printWindowLevelCounter windowTotals)
-                        [ProcessCPUTime, ProcessUserCPUTime, ProcessSystemCPUTime]
+                    putStrLn ""
+                    mapM_ (printProcessLevelCounter windowTotals)
+                        [ProcessCPUTime]
+                    mapM_ (\x -> putStr " " >> printProcessLevelCounter windowTotals x)
+                        [ProcessUserCPUTime, ProcessSystemCPUTime]
                     if ":foreign" `List.isSuffixOf` w
                     then return ()
                     else do
                         putStrLn ""
+                        mapM_ (printProcessLevelCounter windowTotals)
+                            [ProcessCPUTime]
                         let threadCPUTimeTotal =
-                                getWindowLevelCounter sum windowTotals ThreadCPUTime
-                        putStrLn $ "ThreadCPUTime:" ++ toString threadCPUTimeTotal
+                                getProcessLevelCounter sum windowTotals ThreadCPUTime
+                        putStrLn $ " ThreadCPUTime:" ++ toString threadCPUTimeTotal
                         let gcCPUTime =
-                                getWindowLevelCounter head windowTotals GCCPUTime
-                        putStrLn $ "GcCPUTime:" ++ toString gcCPUTime
+                                getProcessLevelCounter head windowTotals GCCPUTime
+                        putStrLn $ " GcCPUTime:" ++ toString gcCPUTime
                         let processCPUTime =
-                                getWindowLevelCounter head windowTotals ProcessCPUTime
+                                getProcessLevelCounter head windowTotals ProcessCPUTime
                         let rtsCPUTime =
                                 processCPUTime - gcCPUTime - threadCPUTimeTotal
-                        putStrLn $ "RtsCPUTime:" ++ toString rtsCPUTime
+                        putStrLn $ " RtsCPUTime(*):" ++ toString rtsCPUTime
 
         let cnt = length allRows
+        putStrLn ""
         printTable ((colHeaders : take maxLines allRows) ++ [separator, summary])
         if cnt > maxLines
         then putStrLn $ "..." ++ show (cnt - maxLines) ++ " lines omitted ..."
@@ -370,15 +384,15 @@ showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
         if (":foreign" `List.isSuffixOf` w)
         then ctrs List.\\ [ThreadAllocated]
         else ctrs
-    getWindowLevelCounter f wt c = f $ fmap snd $ filter (selectCounter c) wt
-    printWindowLevelCounter wt c = do
+    getProcessLevelCounter f wt c = f $ fmap snd $ filter (selectCounter c) wt
+    printProcessLevelCounter wt c = do
         -- Only one thread should have this
         let val = fmap snd $ filter (selectCounter c) wt
         case val of
             [] -> do
                 {-
                 -- a "foreign window does not have GCCPUTime
-                putStrLn $ "printWindowLevelCounter: counter "
+                putStrLn $ "printProcessLevelCounter: counter "
                         ++ show c ++ " not found in windowTotals"
                 -}
                 return ()
@@ -404,25 +418,36 @@ showAllCountersForWindow maxLines concurrent statsRaw tidMap ctrs w = do
             Just label -> label
             Nothing -> "-"
 
--- | Combine stats from all windows with the same name but different thread-id
+-- A window tag is of the format "tid:name", extract the "tid" from this.
+getTidFromWindowTag :: String -> Maybe Word32
+getTidFromWindowTag w =
+    let (tid, r) = span (/= ':') w
+    in if null r then Nothing else Just (read tid :: Word32)
+
+-- | Combine stats from all windows with the same name but different thread-id.
+-- This just gives us more samples for the same window, we are saying we don't
+-- care in which thread's context the window code ran, just give us the timings
+-- in the context of any thread.
+--
+-- We just erase the thread id from the window name and change it to 0, so that
+-- all the threads now have the same thread-id 0.
 foldWindowThreads ::
        [((Word32, String, Counter), [(String, Int)])]
     -> IO [((Word32, String, Counter), [(String, Int)])]
-foldWindowThreads statsRaw = do
-    let renameWindow w =
+foldWindowThreads stats = do
+    let changeWindowTidZero w =
             let (_, r) = span (/= ':') w
             in if null r then w else '0':r
-        rename ((tid, tag, ctr), v) = ((tid, renameWindow tag, ctr), v)
-        getTid w =
-            let (tid, r) = span (/= ':') w
-            in if null r then Nothing else Just (read tid :: Word32)
+
+        collapseTid ((tid, tag, ctr), v) =
+            ((tid, changeWindowTidZero tag, ctr), v)
+
         matching ((tid, tag, _), _) =
-            case getTid tag of
+            case getTidFromWindowTag tag of
                 Nothing -> False
                 Just x -> x == tid
-        statsFiltered = fmap rename $ filter matching statsRaw
 
-    return statsFiltered
+    return $ fmap collapseTid $ filter matching stats
 
 -------------------------------------------------------------------------------
 -- CLI
@@ -571,7 +596,7 @@ getWindowCounterList ::
     [((Word32, String, Counter), [(String, Int)])] -> [(String, Counter)]
 getWindowCounterList stats =
       List.nub
-    $ filter (\(_,c) -> c `notElem` windowLevelCounters)
+    $ filter (\(_,c) -> c `notElem` processLevelCounters)
     $ map (\(_, window, counter) -> (window, counter))
     $ map fst stats
 
@@ -579,6 +604,7 @@ getAllStats ::
     Bool
     -> FilePath
     -> IO
+        -- statsMap :: Map (tid, window tag, counter) [(stat name, value)]
         ( [((Word32, String, Counter), [(String, Int)])]
         , Map Word32 (Maybe String)
         , [((Word32, String, Counter), [(String, Int)])]
@@ -666,6 +692,7 @@ main = do
             putStrLn "Available windows:"
             mapM_ (putStrLn . ("  " ++)) wins
         CmdList (ListThreads path) -> do
+            -- XXX does not print all threads
             (_, tidMap) <- loadStats path
             validateLabels tidMap
             putStrLn "Threads (id, label):"
@@ -673,6 +700,16 @@ main = do
                 putStrLn $ "  " ++ show tid ++ ", " ++ maybe "-" id mlabel)
                 (Map.toList tidMap)
         CmdAnalyse AnalyseConfig
+            -- XXX the mergeThreads should just print a single table with one
+            -- line per window in the summary view.
+            -- XXX We should have the following views:
+            -- 1. overall summary, "default" window only (default)
+            -- 2. thread-agnostic, one line per window, all the counter
+            -- averages as columns. --windows
+            -- 3. thread-aware, one table per window, one row per thread, all
+            -- the counters as columns. --threads
+            -- 4. thread-aware, one table per window per counter, one row per
+            -- thread, counter attributes as columns. --counters
             { analyseFile = path
             , analyseFoldThreads = mergeThreads
             , analyseMaxLines = maxLines
