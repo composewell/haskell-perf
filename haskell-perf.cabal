@@ -33,8 +33,6 @@ extra-doc-files:
 extra-source-files:
     examples/*.hs
     test/snippets/*.hs
-    lib/Streamly/Metrics/File.hs
-    lib/Streamly/Metrics/Console.hs
 
 source-repository head
     type: git
