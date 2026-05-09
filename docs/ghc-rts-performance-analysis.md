@@ -26,46 +26,7 @@ threads) spent between two points, but we cannot tell which Haskell
 thread spent how much time or how much time was actually spent by the
 instructions between those two points.
 
-## Components of a Haskell Process
-
-* An OS level process
-* Multiple OS level threads in the OS process
-* Multiple Haskell green threads that are scheduled on the OS threads. Haskell
-  threads can run on any of the available OS threads every time it is ready to
-  run.
-
-## A prototypical program
-
-[This example](examples/console-loop-multi-thread.hs) is a
-a simple yet comprehensive program to understand different components of
-performance analysis and stats. You can play with this to understand how things
-work, how the stats add up and what they mean.
-
-## How many OS threads do we have?
-
-To see how many OS threads a Haskell process is using on Linux.  Run
-[this example](examples/console-loop-multi-thread.hs), note its pid
-printed in the output.  All of its OS threads can be printed by:
-```
-ls /proc/<PID>/task
-```
-
-Even when compiled without the `-threaded` option we might see two threads
-because the RTS still uses a separate thread for GC and for forking async
-cleanup threads via GC.
-
-One of the tasks will have the same pid as the process pid, this is the main OS
-thread. You can try changing the number of capabilities using +RTS -N and see
-the effect.
-
-GHC may also use independent OS threads for ffi, for GC, for IO manager,
-however it will guarantee that only as many user threads can run at a time as
-specified with the -N rts option.
-
-Usually we see 3 threads plus 2 threads per capability when compiled
-with `-threaded` option.
-
-## GHC RTS stats
+## getRTSStats
 
 The getRTSStats call gives us the CPU time (essentially get_clocktime
 or getrusage under the hood to get the CPU time) of the process and
@@ -120,40 +81,6 @@ in this category.
 
 Note that the GC cpu time should be computed by adding the `gc_cpu_ns`
 and `nonmoving_gc_cpu_ns` when the non-moving gc is enabled.
-
-## Variability of Measurements
-
-Performance measurement is tricky and there are many factors to take care of if
-you want to get reliable results:
-
-* Disable CPU frequency scaling, can cause run-to-run or variability in the
-  same run.
-* Do not run other things on the same machine. interrupts, kernel
-  activity, background daemons can also affect:
-  * Memory contention can affect the measurement.
-  * cache effects due to context switching can affect it.
-* Discard first runs, first runs are usually outliers because of warm up effects,
-  instruction cache cold, data cache cold, page faults, branch predictor
-  not trained.
-* Use thread affinity. Thread migration to another CPU: causes cache
-  invalidation, different core state, timing noise.
-* Use larger measurements. In smaller one measurement overhead and
-  variance may dominate: timing calls (clock_gettime), counters, RTS
-  stats.
-* Different CPUs running at different frequencies can make the results
-  unpredictable.
-* The clocks of different CPUs may not be perfectly in sync.
-
-To counter the last two factors we should use instruction count or
-allocation count rather than time as a more reliable measure. Even
-the instruction count might vary because of measurement overhead adds
-instruction count, which can vary depending on how many times the thread
-is context switched.
-
-## Haskell specific variability
-
-* Lazy evaluation, may defer work which might get evaluated later in the
-  context of some other measurement window.
 
 ## Using getRTSStats with haskell-perf
 
