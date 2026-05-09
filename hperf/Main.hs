@@ -7,7 +7,7 @@ import Perf.Eventlog.Aggregate
   ( collectThreadCounter,
     translateThreadEvents,
   )
-import Control.Monad (when)
+-- import Control.Monad (when)
 import Data.Either (isLeft)
 import Data.Int (Int64)
 import Data.IntMap (IntMap)
@@ -261,10 +261,17 @@ showCounterDetailsForWindow maxLines statsRaw tidMap (w, ctr) = do
          in printf "%d" tid : lb : map snd v
     select ((_, window, counter), _) = window == w && counter == ctr
 
--- XXX we can only use the Process level counters to report the entire
--- program's CPU time including all threads in the saummary data. Reporting
--- this in the Windows times is not useful. We can use the OS thread's
--- ThreadCPUTime only if there is only one Haskell thread running.
+-- ProcessCPUTime is not useful in estimating the CPU time used by a Window. We
+-- should use ThreadCPUTime instead and that too can be used only if we have a
+-- single Haskell thread. However ProcessCPUTime can be used in the following
+-- ways:
+--
+-- (1) for reporting the entire program's CPU usage and compare it against the
+-- elapsed time to find the overall CPU utilization.
+--
+-- (2) In a Window if we can find the elapsed time as well, we can use it to
+-- find the overall Haskell process CPU utilization during the Window.
+--
 processLevelCounters :: [Counter]
 processLevelCounters =
     [ ProcessCPUTime
@@ -281,17 +288,15 @@ processLevelCounters =
 -- which will store a list or Map of counters.
 
 -- | Print a table for the given window, one row per thread that ever entered
--- the window,  listing accumulated value for each
--- counter.
+-- the window,  listing accumulated value for each counter.
 showAllCountersForWindow ::
        Int
-    -> Bool
     -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 String
     -> [Counter]
     -> String
     -> IO ()
-showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
+showAllCountersForWindow maxLines stats tidMap ctrs w = do
     let
         windowTotals :: [((Word32, Counter), Int)]
         windowTotals = fmap toTotal $ filter selectWindow stats
@@ -342,21 +347,34 @@ showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
         if w == "default"
             then putStrLn $ "Global thread wise stat summary"
             else do
-                -- When collapsing windows, if the windows are concurrent then
-                -- we cannot combine the window level counters.
                 putStrLn $ "Window [" ++ w ++ "]" ++ " thread wise stat summary"
+                -- XXX ProcessCPUTime can only be useful when elapsed time is
+                -- also reported to find the cpu utilization during the window.
+                -- Put it under a CLI option.
+                {-
                 when (not concurrent) $ do
                     putStrLn ""
                     mapM_ (printProcessLevelCounter windowTotals)
                         [ProcessCPUTime]
                     mapM_ (\x -> putStr " " >> printProcessLevelCounter windowTotals x)
                         [ProcessUserCPUTime, ProcessSystemCPUTime]
+                -}
+
+                -- XXX In a single-haskell-threaded case ThreadCPUTime can be
+                -- used to estimate the RTS overhead during the Window (total
+                -- OSThreadCPUtime - total HaskellThreadCPUTime), provided the
+                -- OS thread does not change during the entire window. If it is
+                -- possible we should put that under a separate CLI option, and
+                -- also ensure that the RTS is single threaded and there are no
+                -- more than one user threads present in the log.
+                    {-
                     if ":foreign" `List.isSuffixOf` w
                     then return ()
                     else do
                         putStrLn ""
                         mapM_ (printProcessLevelCounter windowTotals)
                             [ProcessCPUTime]
+                        -- XXX is this for Haskell thread or OS thread?
                         let threadCPUTimeTotal =
                                 getProcessLevelCounter sum windowTotals ThreadCPUTime
                         putStrLn $ " ThreadCPUTime:" ++ toString threadCPUTimeTotal
@@ -365,9 +383,12 @@ showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
                         putStrLn $ " GcCPUTime:" ++ toString gcCPUTime
                         let processCPUTime =
                                 getProcessLevelCounter head windowTotals ProcessCPUTime
+                        -- XXX this calculation is wrong even on a single
+                        -- threaded RTS, as there may be two os threads.
                         let rtsCPUTime =
                                 processCPUTime - gcCPUTime - threadCPUTimeTotal
                         putStrLn $ " RtsCPUTime(*):" ++ toString rtsCPUTime
+                    -}
 
         let cnt = length allRows
         putStrLn ""
@@ -384,6 +405,7 @@ showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
         if (":foreign" `List.isSuffixOf` w)
         then ctrs List.\\ [ThreadAllocated]
         else ctrs
+    {-
     getProcessLevelCounter f wt c = f $ fmap snd $ filter (selectCounter c) wt
     printProcessLevelCounter wt c = do
         -- Only one thread should have this
@@ -399,6 +421,7 @@ showAllCountersForWindow maxLines concurrent stats tidMap ctrs w = do
             [x] -> putStrLn $ show c ++ ": " ++ toString x
             _ -> error $ "Multiple values for counter " ++ show c
                         ++ " in window " ++ w
+    -}
 
     toString = Text.unpack . prettyI (Just ',')
     colHeaders =
@@ -633,13 +656,12 @@ validateLabels tidMap = mapM_ checkLabel (Map.toList tidMap)
 
 showAllCountersPerWindow ::
        Int
-    -> Bool
     -> [((Word32, String, Counter), [(String, Int)])]
     -> [((Word32, String, Counter), [(String, Int)])]
     -> Map Word32 (Maybe String)
     -> [(String, Counter)]
     -> IO ()
-showAllCountersPerWindow maxLines foldWindowStats statsRaw statsFlattened tidMap windowCounterList = do
+showAllCountersPerWindow maxLines statsRaw statsFlattened tidMap windowCounterList = do
     -- TODO: filter the counters to be printed based on Config/CLI
     -- TODO: filter the windows or threads to be printed
     let ctrs = List.nub $ fmap snd windowCounterList
@@ -649,7 +671,7 @@ showAllCountersPerWindow maxLines foldWindowStats statsRaw statsFlattened tidMap
 
     let f w =
             showAllCountersForWindow
-                maxLines foldWindowStats (getStats w) (fmap fromJust tidMap) ctrs w
+                maxLines (getStats w) (fmap fromJust tidMap) ctrs w
      in mapM_ f wins
 
 showOneCounterPerWindow ::
@@ -665,7 +687,9 @@ showOneCounterPerWindow maxLines rawStats foldedStats tidMap windowCounterList =
     -- hack - currently we do not compute avg and stddev in flattened
     let getStats w = if w == "default" then rawStats else foldedStats
     -- For each (window, counter) list all threads
-    let f (w,c) = showCounterDetailsForWindow maxLines (getStats w) (fmap fromJust tidMap) (w,c)
+    let f (w,c) =
+            showCounterDetailsForWindow
+                maxLines (getStats w) (fmap fromJust tidMap) (w,c)
      in mapM_ f windowCounterList
 
 -------------------------------------------------------------------------------
@@ -725,5 +749,4 @@ main = do
             then showOneCounterPerWindow
                     maxLines statsMap foldedStats tidMap windowCounterList1
             else showAllCountersPerWindow
-                    maxLines
-                    mergeThreads statsMap foldedStats tidMap windowCounterList1
+                    maxLines statsMap foldedStats tidMap windowCounterList1
